@@ -1,0 +1,54 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "apps/cli/src/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "apps/desktop"
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@betacode/agent": [
+        "packages/agent/src/index.ts"
+      ],
+      "@betacode/ai": [
+        "packages/ai/src/index.ts"
+      ],
+      "@betacode/config": [
+        "packages/config/src/index.ts"
+      ],
+      "@betacode/database": [
+        "packages/database/src/index.ts"
+      ],
+      "@betacode/filesystem": [
+        "packages/filesystem/src/index.ts"
+      ],
+      "@betacode/git": [
+        "packages/git/src/index.ts"
+      ],
+      "@betacode/project": [
+        "packages/project/src/index.ts"
+      ],
+      "@betacode/prompts": [
+        "packages/prompts/src/index.ts"
+      ],
+      "@betacode/server": [
+        "packages/server/src/index.ts"
+      ],
+      "@betacode/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@betacode/terminal": [
+        "packages/terminal/src/index.ts"
+      ],
+      "@betacode/tools": [
+        "packages/tools/src/index.ts"
+      ]
+    }
+  }
+}

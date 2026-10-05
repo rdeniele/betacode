@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "desktop", "runtimeExecutable": "node", "runtimeArgs": ["apps/desktop/node_modules/vite/bin/vite.js", "apps/desktop"], "port": 1420 }
+  ]
+}

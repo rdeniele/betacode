@@ -1,0 +1,29 @@
+{
+  "name": "@betacode/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@betacode/shared": "workspace:*",
+    "@betacode/ai": "workspace:*",
+    "@betacode/agent": "workspace:*",
+    "@betacode/tools": "workspace:*",
+    "@betacode/filesystem": "workspace:*",
+    "@betacode/terminal": "workspace:*",
+    "@betacode/git": "workspace:*",
+    "@betacode/project": "workspace:*",
+    "@betacode/config": "workspace:*",
+    "@betacode/database": "workspace:*",
+    "@betacode/prompts": "workspace:*",
+    "zod": "^4.0.0"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts"
+  }
+}

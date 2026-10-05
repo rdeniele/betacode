@@ -1,0 +1,28 @@
+{
+  "name": "@betacode/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "betacode": "bin/betacode.mjs"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@betacode/shared": "workspace:*",
+    "@betacode/ai": "workspace:*",
+    "@betacode/agent": "workspace:*",
+    "@betacode/tools": "workspace:*",
+    "@betacode/filesystem": "workspace:*",
+    "@betacode/terminal": "workspace:*",
+    "@betacode/git": "workspace:*",
+    "@betacode/project": "workspace:*",
+    "@betacode/config": "workspace:*",
+    "@betacode/database": "workspace:*",
+    "@betacode/prompts": "workspace:*",
+    "@betacode/server": "workspace:*",
+    "zod": "^4.0.0",
+    "tsx": "^4.19.0"
+  }
+}

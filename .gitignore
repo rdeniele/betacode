@@ -1,0 +1,9 @@
+node_modules
+dist
+target
+*.log
+.betacode/
+*.db
+*.db-journal
+.DS_Store
+apps/desktop/src-tauri/gen

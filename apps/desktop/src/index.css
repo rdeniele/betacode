@@ -1,0 +1,79 @@
+@import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
+
+/* BetaCode — dark by default, restrained: near-black surfaces, one warm accent, status colours only where they carry meaning. */
+@theme {
+  --color-bg: #0b0d10;
+  --color-panel: #111418;
+  --color-raised: #181c22;
+  --color-hover: #1d222a;
+  --color-line: #232830;
+  --color-text: #d9dde2;
+  --color-muted: #8b939e;
+  --color-faint: #596069;
+  --color-accent: #e3a857;
+  --color-accent-dim: #3a2d18;
+  --color-ok: #6fcf97;
+  --color-bad: #f2706b;
+  --color-warn: #e6c15a;
+  --color-info: #7aa7ff;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3039 transparent;
+}
+
+::selection {
+  background: #3b3220;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.xterm {
+  padding: 6px 8px;
+}
+
+@keyframes bc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.bc-pulse {
+  animation: bc-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bc-pulse {
+    animation: none;
+  }
+}
