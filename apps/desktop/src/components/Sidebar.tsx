@@ -51,6 +51,7 @@ export function Sidebar() {
     );
     return (
       <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2" aria-label="Sidebar (collapsed)">
+        <img src="/brand/betacode-icon.png" alt="BetaCode" width={32} height={32} className="mb-1 rounded-md" />
         {rail("Expand sidebar", <Menu size={16} />, () => set({ sidebarOpen: true }))}
         {rail("New session", <Plus size={16} />, () => void newSession())}
         {rail("Search in files", <Search size={16} />, () => set({ dialog: "search" }))}

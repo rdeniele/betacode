@@ -1,4 +1,4 @@
-import { Compass, FolderOpen, GitBranch } from "lucide-react";
+import { FolderOpen, GitBranch } from "lucide-react";
 import type { AgentMode } from "../lib/types";
 import { useApp } from "../stores/app";
 import { Composer } from "./Composer";
@@ -27,9 +27,8 @@ export function Hero({ running, mode, onMode, onSend, onStop }: { running: boole
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-8">
       <div className="w-full max-w-2xl">
         <div className="flex flex-col items-center text-center">
-          <Compass size={30} className="mb-2 text-accent" strokeWidth={1.6} aria-hidden />
-          <h1 className="text-[30px] font-bold tracking-tight">
-            Beta<span className="text-accent">Code</span>
+          <h1 className="w-full max-w-[300px]">
+            <img src="/brand/betacode-logo.png" alt="BetaCode" width={1536} height={1024} className="h-auto w-full rounded-xl" />
           </h1>
           <p className="mt-1 text-[13px] text-muted">AI coding agent for your projects.</p>
           <p className="mt-5 max-w-md text-[11.5px] leading-relaxed text-faint">Tip: {tip}</p>

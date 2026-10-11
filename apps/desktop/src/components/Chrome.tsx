@@ -21,8 +21,11 @@ export function TopBar() {
   const branch = project?.git.branch;
   return (
     <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel px-3" role="banner">
-      <span className="text-[13px] font-bold tracking-tight">
+      <span className="flex shrink-0 items-center gap-2 text-[13px] font-bold tracking-tight">
+        <img src="/brand/betacode-icon.png" alt="" width={28} height={28} className="rounded-md" />
+        <span>
         Beta<span className="text-accent">Code</span>
+        </span>
       </span>
       {project && (
         <button className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-muted hover:bg-hover hover:text-text" onClick={() => set({ dialog: "open-project" })} title={project.info.root}>
