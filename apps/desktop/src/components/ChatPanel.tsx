@@ -1,5 +1,6 @@
 import { useApp } from "../stores/app";
 import { Composer } from "./Composer";
+import { Hero } from "./Hero";
 import { MessageList } from "./MessageList";
 import { PermissionCard } from "./PermissionCard";
 import { PlanView } from "./PlanView";
@@ -13,6 +14,7 @@ export function ChatPanel() {
   const setMode = useApp((s) => s.setMode);
   const meta = STATE_META[agentState] ?? STATE_META.IDLE!;
   const showState = running || agentState !== "IDLE";
+  const empty = items.length === 0 && !running && pending.length === 0 && plan.length === 0;
 
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-bg" aria-label="Chat">
@@ -26,14 +28,20 @@ export function ChatPanel() {
           </span>
         )}
       </div>
-      <MessageList items={items} />
-      <div className="mx-auto flex max-h-[55%] w-full max-w-3xl shrink-0 flex-col gap-2.5 overflow-y-auto px-4 pb-2">
-        <PlanView plan={plan} />
-        {pending.map((p) => (
-          <PermissionCard key={p.id} request={p} onDecide={decide} />
-        ))}
-      </div>
-      <Composer running={running} disabled={!project || !activeId} mode={mode} onMode={setMode} onSend={(t) => void send(t)} onStop={() => void cancel()} />
+      {empty && project && activeId ? (
+        <Hero running={running} mode={mode} onMode={setMode} onSend={(t) => void send(t)} onStop={() => void cancel()} />
+      ) : (
+        <>
+          <MessageList items={items} />
+          <div className="mx-auto flex max-h-[55%] w-full max-w-3xl shrink-0 flex-col gap-2.5 overflow-y-auto px-4 pb-2">
+            <PlanView plan={plan} />
+            {pending.map((p) => (
+              <PermissionCard key={p.id} request={p} onDecide={decide} />
+            ))}
+          </div>
+          <Composer running={running} disabled={!project || !activeId} mode={mode} onMode={setMode} onSend={(t) => void send(t)} onStop={() => void cancel()} />
+        </>
+      )}
     </section>
   );
 }

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BetaCode",
+  "version": "0.1.0",
+  "identifier": "dev.betacode.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --dir ../.. dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "node ../../scripts/bundle-runtime.mjs && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "BetaCode",
+        "width": 1480,
+        "height": 920,
+        "minWidth": 980,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:4317 http://localhost:4317 ipc: http://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": {
+      "runtime/server.mjs": "runtime/server.mjs",
+      "runtime/engine/query_engine.node": "runtime/engine/query_engine.node"
+    }
+  }
+}

@@ -4,6 +4,7 @@ import type {
   DoctorCheck,
   FileChangeInfo,
   GitStatus,
+  OllamaStatus,
   OpenProject,
   PermissionDecision,
   PublicConfig,
@@ -11,6 +12,7 @@ import type {
   ServerEvent,
   SessionDetail,
   SessionRecord,
+  SetupOverview,
   SlashResult,
 } from "./types";
 
@@ -89,8 +91,14 @@ export const api = {
   deletePermissionRule: (tool: string) => request("DELETE", `/api/permission-rules/${encodeURIComponent(tool)}`),
 
   config: () => request<PublicConfig>("GET", "/api/config"),
-  updateConfig: (patch: Partial<Omit<PublicConfig, "hasApiKey" | "detectedContextLength" | "pricing">> & { apiKey?: string }) => request<PublicConfig>("PUT", "/api/config", patch),
+  updateConfig: (patch: Partial<Omit<PublicConfig, "hasApiKey" | "detectedContextLength" | "pricing">> & { apiKey?: string; rememberKey?: boolean; forgetKey?: boolean; teacher?: { enabled?: boolean; provider?: string; baseUrl: string; model: string }; teacherKey?: string; rememberTeacherKey?: boolean; forgetTeacherKey?: boolean }) => request<PublicConfig>("PUT", "/api/config", patch),
+  testTeacher: (b: { baseUrl?: string; provider?: string; model?: string; apiKey?: string } = {}) => request<ConnectionTest>("POST", "/api/config/test-teacher", b),
   testConnection: () => request<ConnectionTest>("POST", "/api/config/test"),
+  setupOverview: () => request<SetupOverview>("GET", "/api/setup/overview"),
+  setupApplyEnv: (b: { contextLength: number; modelsDir?: string; restart?: boolean }) => request<{ result: { applied: string[]; manual: string[] }; ollama?: OllamaStatus }>("POST", "/api/setup/apply-env", b),
+  setupPull: (tag: string) => request<{ started: boolean }>("POST", "/api/setup/pull", { tag }),
+  setupCancelPull: () => request<{ cancelled: boolean }>("POST", "/api/setup/pull/cancel", {}),
+  setupUse: (tag: string, contextLength: number) => request<PublicConfig>("POST", "/api/setup/use", { tag, contextLength }),
   doctor: () => request<{ checks: DoctorCheck[] }>("GET", "/api/doctor"),
 
   terminalRun: (id: string, command: string) => request("POST", `/api/terminal/${id}/run`, { command }),

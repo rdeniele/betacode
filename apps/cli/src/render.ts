@@ -83,6 +83,9 @@ export class Renderer {
       case "session.compacted":
         this.line(s.dim("(context compacted)"));
         break;
+      case "agent.notice":
+        this.line(e.level === "warn" ? s.yellow(`⚠ ${e.message}`) : s.dim(e.message));
+        break;
       case "model.error":
         this.line(s.red(`Model error: ${e.message}`));
         break;

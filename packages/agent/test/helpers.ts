@@ -43,6 +43,7 @@ export const use = (...calls: ToolCallRequest[]): ChatResponse => ({ content: ""
 export const nodeCmd = (code: string) => `node -e "${code}"`;
 
 export interface Harness {
+  teacherProvider?: ScriptedProvider;
   dir: string;
   session: AgentSession;
   events: AgentEvent[];
@@ -54,12 +55,14 @@ export function makeConfig(over: Partial<BetaCodeConfig> = {}): BetaCodeConfig {
   return ConfigSchema.parse({ model: "scripted", ...over });
 }
 
-export function harness(script: Step[], opts: { prompter?: PermissionPrompter; config?: Partial<BetaCodeConfig>; setup?: (dir: string) => void; autoApprove?: SessionOptions["autoApprove"] } = {}): Harness {
+export function harness(script: Step[], opts: { teacherScript?: Step[]; prompter?: PermissionPrompter; config?: Partial<BetaCodeConfig>; setup?: (dir: string) => void; autoApprove?: SessionOptions["autoApprove"] } = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), "bc-agent-"));
   opts.setup?.(dir);
   const provider = new ScriptedProvider(script);
   const events: AgentEvent[] = [];
+  const teacherProvider = opts.teacherScript ? new ScriptedProvider(opts.teacherScript) : undefined;
   const session = new AgentSession({
+    teacher: teacherProvider ? { provider: teacherProvider, model: "teacher-model", label: "Teacher Pro", host: "api.teacher.test" } : undefined,
     root: dir,
     config: makeConfig(opts.config),
     provider,
@@ -67,7 +70,7 @@ export function harness(script: Step[], opts: { prompter?: PermissionPrompter; c
     autoApprove: opts.autoApprove,
     onEvent: (e) => events.push(e),
   });
-  return { dir, session, events, provider, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { teacherProvider, dir, session, events, provider, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 export const allow: PermissionPrompter = async () => "allow_once";

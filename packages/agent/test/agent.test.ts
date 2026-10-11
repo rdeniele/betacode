@@ -66,12 +66,12 @@ describe("agent loop: tool selection and execution", () => {
   });
 
   it("tells the model when edit_file's oldText does not match, without changing the file", async () => {
-    h = harness([use(call("edit_file", { path: "a.txt", oldText: "zzz", newText: "y" })), say("will re-read")], {
+    h = harness([use(call("read_file", { path: "a.txt" })), use(call("edit_file", { path: "a.txt", oldText: "zzz", newText: "y" })), say("will re-read")], {
       prompter: allow,
       setup: (d) => writeFileSync(join(d, "a.txt"), "hello"),
     });
     await h.session.run("edit");
-    expect(toolMessages(h)[0]!.content).toMatch(/not found in a\.txt.*re-read/s);
+    expect(toolMessages(h)[1]!.content).toMatch(/not found in a\.txt.*re-read/s);
     expect(readFileSync(join(h.dir, "a.txt"), "utf8")).toBe("hello");
     // A failing edit has nothing to approve, so no prompt was shown.
     expect(types(h)).not.toContain("permission.requested");

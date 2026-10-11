@@ -117,6 +117,7 @@ export type AgentEvent =
   | { type: "usage"; usage: TokenUsage; contextTokens: number; contextLimit: number; steps: number }
   | { type: "session.compacted"; summary: string }
   | { type: "model.error"; message: string }
+  | { type: "agent.notice"; level: "info" | "warn"; message: string }
   | { type: "agent.completed"; reason: StopReason; message?: string };
 
 export type EventListener = (event: AgentEvent) => void;

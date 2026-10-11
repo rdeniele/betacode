@@ -222,3 +222,30 @@ describe("Qwen text tool-call fallback", () => {
     expect(final!.finishReason).toBe("tool_calls");
   });
 });
+
+describe("createProvider and hosted endpoints", () => {
+  it("recognises local and private endpoints", async () => {
+    const { isLocalUrl } = await import("../src");
+    for (const u of ["http://localhost:8000/v1", "http://127.0.0.1:11434/v1", "http://192.168.1.5:8000/v1", "http://10.0.0.2/v1", "http://172.20.1.1/v1", "http://box.local:8080/v1"]) expect(isLocalUrl(u)).toBe(true);
+    for (const u of ["https://api.groq.com/openai/v1", "https://generativelanguage.googleapis.com/v1beta/openai", "http://172.32.0.1/v1", "not a url"]) expect(isLocalUrl(u)).toBe(false);
+  });
+
+  it("does not send top_k / repetition_penalty to hosted APIs, but does to local servers", async () => {
+    const { createProvider } = await import("../src");
+    const seen: any[] = [];
+    const baseUrl = await start((b, res) => {
+      seen.push(b);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+    });
+    const req = { messages: [{ role: "user" as const, content: "x" }], topK: 20, repetitionPenalty: 1.05, topP: 0.8 };
+    await createProvider({ provider: "qwen", baseUrl, model: "m" }).chat(req); // 127.0.0.1 → local
+    expect(seen[0]).toMatchObject({ top_k: 20, repetition_penalty: 1.05, top_p: 0.8 });
+    // Same code path with a hosted-looking base URL is checked by building the provider's body directly.
+    const hosted = createProvider({ provider: "openai-compatible", baseUrl: "https://api.groq.com/openai/v1", model: "m" }) as any;
+    const body = hosted.buildBody(req, false);
+    expect(body.top_k).toBeUndefined();
+    expect(body.repetition_penalty).toBeUndefined();
+    expect(body.top_p).toBe(0.8);
+  });
+});

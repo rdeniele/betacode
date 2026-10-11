@@ -10,7 +10,7 @@ export function Button({ variant = "outline", className, ...props }: ButtonHTMLA
       {...props}
       className={clsx(
         "inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-        variant === "primary" && "bg-accent text-black hover:brightness-110",
+        variant === "primary" && "bg-accent text-on-accent hover:brightness-110",
         variant === "outline" && "border border-line bg-raised text-text hover:bg-hover",
         variant === "ghost" && "text-muted hover:bg-hover hover:text-text",
         variant === "danger" && "border border-bad/40 bg-bad/10 text-bad hover:bg-bad/20",

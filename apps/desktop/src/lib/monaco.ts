@@ -31,6 +31,19 @@ monaco.editor.defineTheme("betacode-dark", {
   },
 });
 
+monaco.editor.defineTheme("betacode-light", {
+  base: "vs",
+  inherit: true,
+  rules: [],
+  colors: {
+    "editor.background": "#f6f5f2",
+    "editor.lineHighlightBackground": "#efede8",
+    "editorGutter.background": "#f6f5f2",
+    "editorLineNumber.foreground": "#98938a",
+    "editorCursor.foreground": "#b4531c",
+  },
+});
+
 loader.config({ monaco });
 
 export { monaco };

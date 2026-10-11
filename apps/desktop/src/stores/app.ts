@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { api, ApiError, subscribeEvents } from "../lib/api";
 import { applyEvent, itemsFromMessages, notice, type ChatItem } from "../lib/chat";
+import { applyAppearance, loadAppearance, saveAppearance, type Appearance } from "../lib/appearance";
+import { setupBus } from "../lib/setup-bus";
 import { terminalBus } from "../lib/terminal-bus";
 import type {
   AgentMode,
@@ -19,7 +21,7 @@ import type {
 export type LeftTab = "files" | "sessions";
 export type RightTab = "changes" | "editor" | "git" | "context";
 export type Dialog = null | "open-project" | "settings" | "palette" | "quick-open" | "search";
-export type SettingsTab = "models" | "local" | "permissions" | "doctor";
+export type SettingsTab = "models" | "helper" | "local" | "appearance" | "permissions" | "doctor";
 
 export interface EditorTab {
   path: string;
@@ -68,7 +70,15 @@ interface State {
   selectedChange?: string;
   toasts: Toast[];
   treeVersion: number;
+  appearance: Appearance;
+  sidebarOpen: boolean;
+  /** Models the configured endpoint reports (for the model picker). */
+  availableModels: string[];
+  modelStatus: "unknown" | "connected" | "unreachable";
 
+  setAppearance(p: Partial<Appearance>): void;
+  refreshModels(): Promise<void>;
+  setModel(id: string): Promise<void>;
   init(): () => void;
   openProject(path: string): Promise<boolean>;
   refreshSessions(search?: string): Promise<void>;
@@ -150,10 +160,15 @@ export const useApp = create<State>((set, get) => {
   const handleEvent = (ev: ServerEvent) => {
     if (ev.scope === "session") {
       if (ev.sessionId === get().activeId) handleSessionEvent(ev.event);
+    } else if (ev.scope === "setup") {
+      setupBus.emit(ev);
     } else if (ev.scope === "terminal") {
       terminalBus.emit({ id: ev.id, kind: ev.kind, chunk: ev.chunk, code: ev.code });
     } else if (ev.kind === "sessions.changed") void get().refreshSessions();
-    else if (ev.kind === "config.changed") void get().refreshConfig();
+    else if (ev.kind === "config.changed") {
+      void get().refreshConfig();
+      void get().refreshModels();
+    }
   };
 
   return {
@@ -175,11 +190,42 @@ export const useApp = create<State>((set, get) => {
     tabs: [],
     toasts: [],
     treeVersion: 0,
+    appearance: loadAppearance(),
+    sidebarOpen: true,
+    availableModels: [],
+    modelStatus: "unknown",
+
+    setAppearance(p) {
+      const next = { ...get().appearance, ...p };
+      applyAppearance(next);
+      saveAppearance(next);
+      set({ appearance: next });
+    },
+
+    async refreshModels() {
+      try {
+        const t = await api.testConnection();
+        set({ availableModels: t.ok ? t.models : [], modelStatus: t.ok ? "connected" : "unreachable" });
+      } catch {
+        set({ availableModels: [], modelStatus: "unreachable" });
+      }
+    },
+
+    async setModel(id) {
+      try {
+        await api.updateConfig({ model: id });
+        await get().refreshConfig();
+      } catch (e) {
+        get().toast(errMsg(e), "error");
+      }
+    },
 
     init() {
+      applyAppearance(get().appearance);
       const off = subscribeEvents(handleEvent, (ok) => {
         set({ connection: ok ? "online" : "offline" });
         if (ok) {
+          void get().refreshModels();
           void api
             .state()
             .then(async (st) => {

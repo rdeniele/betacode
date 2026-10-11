@@ -3,6 +3,9 @@ import type { AgentEvent } from "@betacode/shared";
 export type ServerEvent =
   | { scope: "session"; sessionId: string; event: AgentEvent }
   | { scope: "terminal"; id: string; kind: "output" | "exit"; chunk?: string; code?: number | null }
+  | { scope: "setup"; kind: "progress"; tag: string; status: string; completed?: number; total?: number }
+  | { scope: "setup"; kind: "done" | "cancelled"; tag: string }
+  | { scope: "setup"; kind: "error"; tag: string; message: string }
   | { scope: "app"; kind: "project.opened" | "sessions.changed" | "config.changed" };
 
 export type ServerListener = (e: ServerEvent) => void;

@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Lock, X } from "lucide-react";
 import { lazy, Suspense } from "react";
+import { isDarkTheme } from "../lib/appearance";
 import { useApp } from "../stores/app";
 import { Kbd } from "./ui";
 
@@ -11,7 +12,7 @@ const MonacoEditor = lazy(async () => {
 });
 
 export function EditorPanel() {
-  const { tabs, activeTab, changes, running } = useApp();
+  const { tabs, activeTab, changes, running, appearance } = useApp();
   const { set, closeTab, editTab, saveTab } = useApp.getState();
   const tab = tabs.find((t) => t.path === activeTab);
   // The file is read-only while the agent is actively modifying it.
@@ -56,7 +57,7 @@ export function EditorPanel() {
                 path={tab.path}
                 language={tab.language === "typescriptreact" ? "typescript" : tab.language === "javascriptreact" ? "javascript" : tab.language}
                 value={tab.content}
-                theme="betacode-dark"
+                theme={isDarkTheme(appearance) ? "betacode-dark" : "betacode-light"}
                 onChange={(v) => editTab(tab.path, v ?? "")}
                 onMount={(editor, monaco) => editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void useApp.getState().saveTab(tab.path))}
                 options={{ readOnly: locked, minimap: { enabled: false }, fontSize: 12.5, fontFamily: "ui-monospace, Cascadia Code, Consolas, monospace", scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, renderWhitespace: "none", padding: { top: 8 } }}

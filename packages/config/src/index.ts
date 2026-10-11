@@ -30,6 +30,18 @@ export const ConfigSchema = z.object({
   commandTimeoutMs: z.number().int().min(1000).default(120_000),
   /** Per-tool overrides: tool name → permission level, or "deny" to block entirely. */
   permissions: z.record(z.string(), permissionValue).default({}),
+  /**
+   * Optional stronger "helper" model. When the main model is stuck, BetaCode can ask the user whether this model
+   * should take over. Its API key is stored separately (never in this file).
+   */
+  teacher: z
+    .object({
+      enabled: z.boolean().default(true),
+      provider: z.string().min(1).default("openai-compatible"),
+      baseUrl: z.string().url(),
+      model: z.string().min(1),
+    })
+    .optional(),
   /** Optional pricing per million tokens; cost is only shown when configured. */
   pricing: z.object({ inputPerMillion: z.number().min(0), outputPerMillion: z.number().min(0) }).optional(),
 });
@@ -75,6 +87,7 @@ function fromEnv(env: NodeJS.ProcessEnv): Record<string, unknown> {
   num("BETA_CODE_REPETITION_PENALTY", "repetitionPenalty");
   num("BETA_CODE_CONTEXT_LENGTH", "contextLength");
   num("BETA_CODE_MAX_ITERATIONS", "maxIterations");
+  // BETA_CODE_TEACHER_API_KEY is read by the app, not stored in the config object.
   return out;
 }
 
@@ -122,3 +135,5 @@ export function saveConfig(patch: Partial<ConfigInput>, opts: SaveOptions): stri
   writeFileSync(file, JSON.stringify(next, null, 2) + "\n");
   return file;
 }
+
+export * from "./secrets";

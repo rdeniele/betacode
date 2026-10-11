@@ -56,6 +56,46 @@ export interface EditResult {
   path: string;
   replacements: number;
   diff: string;
+  /** True when oldText only matched after ignoring indentation. */
+  fuzzy?: boolean;
+}
+
+const indentOf = (s: string) => /^[ \t]*/.exec(s)![0];
+
+/**
+ * Find `oldText` ignoring leading/trailing whitespace on each line. Returns the file with the block replaced
+ * (re-indented to the file's indentation), "ambiguous" if several blocks match, or undefined if none does.
+ */
+export function looseReplace(file: string, oldText: string, newText: string): string | "ambiguous" | undefined {
+  const eol = file.includes("\r\n") ? "\r\n" : "\n";
+  const fileLines = file.split(/\r?\n/);
+  const want = oldText.split(/\r?\n/);
+  while (want.length && want[want.length - 1]!.trim() === "") want.pop();
+  while (want.length && want[0]!.trim() === "") want.shift();
+  if (!want.length || want.every((l) => l.trim() === "")) return undefined;
+  const norm = want.map((l) => l.trim());
+  const hits: number[] = [];
+  for (let i = 0; i + want.length <= fileLines.length; i++) {
+    let ok = true;
+    for (let j = 0; j < want.length; j++) {
+      if (fileLines[i + j]!.trim() !== norm[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) hits.push(i);
+  }
+  if (hits.length === 0) return undefined;
+  if (hits.length > 1) return "ambiguous";
+  const start = hits[0]!;
+  const fileIndent = indentOf(fileLines[start]!);
+  const wantIndent = indentOf(want[0]!);
+  const replacement = newText.split(/\r?\n/).map((l) => {
+    if (l.trim() === "") return l;
+    return l.startsWith(wantIndent) ? fileIndent + l.slice(wantIndent.length) : l;
+  });
+  const out = [...fileLines.slice(0, start), ...replacement, ...fileLines.slice(start + want.length)];
+  return out.join(eol);
 }
 
 function isBinary(buf: Buffer): boolean {
@@ -67,12 +107,35 @@ function isBinary(buf: Buffer): boolean {
 /** File operations confined to a workspace, with every mutation recorded in the {@link ChangeTracker}. */
 export class FileService {
   readonly ignore: IgnoreMatcher;
+  /** What the agent last saw of each file; used to refuse edits based on stale or imagined content. */
+  private readonly seen = new Map<string, { mtimeMs: number; size: number }>();
 
   constructor(
     readonly ws: Workspace,
     readonly changes: ChangeTracker,
+    private readonly opts: { requireReadBeforeEdit?: boolean } = {},
   ) {
     this.ignore = loadIgnore(ws.root);
+  }
+
+  private stamp(abs: string): void {
+    try {
+      const st = statSync(abs);
+      this.seen.set(abs, { mtimeMs: st.mtimeMs, size: st.size });
+    } catch {
+      this.seen.delete(abs);
+    }
+  }
+
+  /** Throws if the file exists but was never read in this session, or changed since it was read. */
+  private assertFresh(abs: string, rel: string): void {
+    if (!this.opts.requireReadBeforeEdit) return;
+    const s = this.seen.get(abs);
+    if (!s) throw new BetaCodeError(`You have not read ${rel} yet. Use read_file on it first, then base your edit on exactly what you read.`, "NOT_READ");
+    const st = statSync(abs);
+    if (st.mtimeMs !== s.mtimeMs || st.size !== s.size) {
+      throw new BetaCodeError(`${rel} changed on disk since you read it. Re-read it with read_file before editing.`, "STALE");
+    }
   }
 
   read(path: string, opts: { offset?: number; limit?: number; allowSensitive?: boolean } = {}): ReadResult {
@@ -87,6 +150,7 @@ export class FileService {
     if (st.size > MAX_READ_BYTES) throw new BetaCodeError(`${rel} is ${st.size} bytes, larger than the ${MAX_READ_BYTES} byte read limit. Use search_files to locate the relevant section.`, "TOO_LARGE");
     const buf = readFileSync(abs);
     if (isBinary(buf)) throw new BetaCodeError(`${rel} appears to be a binary file.`, "BINARY");
+    this.stamp(abs);
     const lines = buf.toString("utf8").split(/\r?\n/);
     if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
     const start = Math.max(1, opts.offset ?? 1);
@@ -126,20 +190,23 @@ export class FileService {
     let before: string | null = null;
     if (existsSync(abs)) {
       if (statSync(abs).isDirectory()) throw new BetaCodeError(`${rel} is a directory.`, "IS_DIRECTORY");
+      this.assertFresh(abs, rel);
       before = readFileSync(abs, "utf8");
     }
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);
+    this.stamp(abs);
     this.changes.record(rel, before, content);
     return { path: rel, kind: before === null ? "added" : "modified", diff: unifiedDiff(rel, before, content), bytes: Buffer.byteLength(content) };
   }
 
   /** Compute the result of an edit without touching disk (used for permission previews). */
-  planEdit(path: string, oldText: string, newText: string, replaceAll = false): { rel: string; before: string; after: string; replacements: number } {
+  planEdit(path: string, oldText: string, newText: string, replaceAll = false): { rel: string; before: string; after: string; replacements: number; fuzzy?: boolean } {
     const abs = this.ws.resolve(path);
     const rel = this.ws.rel(abs);
     if (!existsSync(abs)) throw new BetaCodeError(`File not found: ${rel}. Use write_file to create it.`, "NOT_FOUND");
     if (oldText === "") throw new BetaCodeError("oldText must not be empty. Use write_file to create or replace a whole file.", "INVALID");
+    this.assertFresh(abs, rel);
     const before = readFileSync(abs, "utf8");
     let search = oldText;
     let replacement = newText;
@@ -149,6 +216,12 @@ export class FileService {
     }
     const count = before.split(search).length - 1;
     if (count === 0) {
+      // Small models often get indentation slightly wrong. Accept a single unambiguous match that differs only in indentation.
+      const loose = looseReplace(before, oldText, newText);
+      if (loose === "ambiguous") {
+        throw new BetaCodeError(`oldText matches several places in ${rel} when indentation is ignored. Include more surrounding lines to make it unique.`, "AMBIGUOUS");
+      }
+      if (loose !== undefined) return { rel, before, after: loose, replacements: 1, fuzzy: true };
       throw new BetaCodeError(`oldText was not found in ${rel}. The file may have changed; re-read it with read_file and copy the text exactly (including whitespace).`, "NO_MATCH");
     }
     if (count > 1 && !replaceAll) {
@@ -160,9 +233,11 @@ export class FileService {
 
   edit(path: string, oldText: string, newText: string, replaceAll = false): EditResult {
     const plan = this.planEdit(path, oldText, newText, replaceAll);
-    writeFileSync(this.ws.resolve(path), plan.after);
+    const abs = this.ws.resolve(path);
+    writeFileSync(abs, plan.after);
+    this.stamp(abs);
     this.changes.record(plan.rel, plan.before, plan.after);
-    return { path: plan.rel, replacements: plan.replacements, diff: unifiedDiff(plan.rel, plan.before, plan.after) };
+    return { path: plan.rel, replacements: plan.replacements, diff: unifiedDiff(plan.rel, plan.before, plan.after), fuzzy: plan.fuzzy };
   }
 
   delete(path: string, opts: { recursive?: boolean } = {}): { path: string; deleted: number } {

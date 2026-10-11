@@ -1,27 +1,22 @@
 import clsx from "clsx";
 import { Command, FolderOpen, GitBranch, Settings, SquareTerminal, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { useEffect } from "react";
 import { useApp } from "../stores/app";
 import { estimateCost } from "./ContextPanel";
 import { IconButton, Kbd, formatTokens } from "./ui";
 
 export function TopBar() {
   const { project, config, connection, terminalOpen } = useApp();
+  const model = useApp((s) => (connection === "online" ? s.modelStatus : "unknown"));
+  const refreshModels = useApp((s) => s.refreshModels);
   const set = useApp((s) => s.set);
-  const [model, setModel] = useState<"unknown" | "connected" | "unreachable">("unknown");
 
   useEffect(() => {
-    if (connection !== "online") return setModel("unknown");
-    let live = true;
-    const probe = () => api.testConnection().then((r) => live && setModel(r.ok ? "connected" : "unreachable"), () => live && setModel("unreachable"));
-    void probe();
-    const t = setInterval(probe, 30_000);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [connection, config?.baseUrl, config?.provider, config?.model]);
+    if (connection !== "online") return;
+    void refreshModels();
+    const t = setInterval(() => void refreshModels(), 30_000);
+    return () => clearInterval(t);
+  }, [connection, config?.baseUrl, config?.provider, config?.model, refreshModels]);
 
   const branch = project?.git.branch;
   return (
@@ -91,7 +86,7 @@ export function Toasts() {
   return (
     <div className="pointer-events-none fixed bottom-9 right-4 z-[60] flex w-80 flex-col gap-2" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} role="status" className={clsx("pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2 shadow-xl", t.tone === "error" ? "border-bad/40 bg-[#1d1214] text-bad" : t.tone === "success" ? "border-ok/30 bg-[#101a14] text-ok" : "border-line bg-raised text-text")}>
+        <div key={t.id} role="status" className={clsx("pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2 shadow-xl", t.tone === "error" ? "border-bad/50 bg-raised text-bad" : t.tone === "success" ? "border-ok/40 bg-raised text-ok" : "border-line bg-raised text-text")}>
           <span className="min-w-0 flex-1 break-words">{t.text}</span>
           <button aria-label="Dismiss" className="text-faint hover:text-text" onClick={() => dismiss(t.id)}>
             <X size={13} />

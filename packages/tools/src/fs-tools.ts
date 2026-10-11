@@ -1,7 +1,17 @@
 import { renderTree, isSensitivePath, unifiedDiff } from "@betacode/filesystem";
+import { syntaxCheck } from "./syntax";
 import { z } from "@betacode/shared";
 import type { AgentTool } from "./types";
 import { guard, pluralize, truncate } from "./util";
+import type { ToolContext } from "./types";
+
+/** Appended to write/edit results so the model learns immediately that a file it wrote does not parse. */
+function syntaxNote(ctx: ToolContext, rel: string, content: string): string {
+  const problem = syntaxCheck(ctx.workspace.resolve(rel), content, ctx.workspace.root);
+  return problem ? `
+⚠ Syntax check FAILED for ${rel} — fix this before anything else:
+${problem}` : "";
+}
 
 const num = z.coerce.number().int().positive();
 
@@ -12,7 +22,7 @@ const listDirectorySchema = z.object({
 
 export const listDirectory: AgentTool<z.infer<typeof listDirectorySchema>> = {
   name: "list_directory",
-  description: "List a directory as a tree. Respects .gitignore and skips node_modules, build output and similar folders.",
+  description: "List a directory as a tree (default depth 2). Respects .gitignore and skips node_modules and build output. Use it to learn the layout of a folder before reading or editing inside it.",
   schema: listDirectorySchema,
   kind: "read",
   readOnly: true,
@@ -33,7 +43,7 @@ const readFileSchema = z.object({
 
 export const readFile: AgentTool<z.infer<typeof readFileSchema>> = {
   name: "read_file",
-  description: "Read a text file. Returns line-numbered contents, total lines, size and language. Use offset/limit for large files.",
+  description: "Read a text file. Returns line-numbered contents, total lines, size and language. ALWAYS read a file before editing it. For large files read the relevant part with offset and limit (find it first with search_code). Several independent reads can be requested in one turn. Line numbers are not part of the file; do not include them when editing.",
   schema: readFileSchema,
   kind: "read",
   readOnly: true,
@@ -56,7 +66,7 @@ const writeFileSchema = z.object({
 
 export const writeFile: AgentTool<z.infer<typeof writeFileSchema>> = {
   name: "write_file",
-  description: "Create a new file or completely replace an existing one. For small changes to existing files use edit_file instead.",
+  description: "Create a NEW file, or completely replace an existing one that you have already read. For changing part of an existing file use edit_file. Parent folders are created automatically. Write the complete file content; never use placeholders like '...rest of file'.",
   schema: writeFileSchema,
   kind: "edit",
   readOnly: false,
@@ -74,7 +84,7 @@ export const writeFile: AgentTool<z.infer<typeof writeFileSchema>> = {
   execute: (a, ctx) =>
     guard(() => {
       const r = ctx.files.write(a.path, a.content);
-      return { ok: true, content: `${r.kind === "added" ? "Created" : "Updated"} ${r.path} (${r.bytes} bytes).\n${truncate(r.diff, 6000)}`, data: r };
+      return { ok: true, content: `${r.kind === "added" ? "Created" : "Updated"} ${r.path} (${r.bytes} bytes).\n${truncate(r.diff, 6000)}${syntaxNote(ctx, r.path, a.content)}`, data: r };
     }),
 };
 
@@ -87,7 +97,7 @@ const editFileSchema = z.object({
 
 export const editFile: AgentTool<z.infer<typeof editFileSchema>> = {
   name: "edit_file",
-  description: "Replace exact text in an existing file. Preferred over write_file for modifications. If oldText is not found you get an error: re-read the file and retry with exact text.",
+  description: "Change part of an existing file by replacing exact text. You must have read the file with read_file first. oldText must be copied from what you read and must identify exactly one place: include a few surrounding lines (including the line before or after) so it is unique, or set replaceAll to replace every occurrence. Keep oldText as small as is still unique. Example: path 'src/app.ts', oldText 'const port = 3000;', newText 'const port = Number(process.env.PORT ?? 3000);'. If it fails, re-read the file and copy the text again; do not resend the same oldText.",
   schema: editFileSchema,
   kind: "edit",
   readOnly: false,
@@ -103,7 +113,8 @@ export const editFile: AgentTool<z.infer<typeof editFileSchema>> = {
   execute: (a, ctx) =>
     guard(() => {
       const r = ctx.files.edit(a.path, a.oldText, a.newText, a.replaceAll);
-      return { ok: true, content: `Edited ${r.path} (${pluralize(r.replacements, "replacement")}).\n${truncate(r.diff, 6000)}`, data: r };
+      const fuzz = r.fuzzy ? " Your oldText matched only after ignoring indentation; the replacement was re-indented to fit." : "";
+      return { ok: true, content: `Edited ${r.path} (${pluralize(r.replacements, "replacement")}).${fuzz}\n${truncate(r.diff, 6000)}${syntaxNote(ctx, r.path, ctx.files.readText(r.path))}`, data: r };
     }),
 };
 

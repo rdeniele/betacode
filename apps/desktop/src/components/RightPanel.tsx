@@ -21,7 +21,7 @@ export function RightPanel() {
         {tabs.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => set({ rightTab: t.id })} className={clsx("flex items-center gap-1.5 rounded px-2 py-1 text-[11.5px] font-semibold uppercase tracking-wide", tab === t.id ? "text-text" : "text-faint hover:text-muted")}>
             {t.label}
-            {!!t.badge && <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-black">{t.badge}</span>}
+            {!!t.badge && <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-on-accent">{t.badge}</span>}
           </button>
         ))}
       </div>

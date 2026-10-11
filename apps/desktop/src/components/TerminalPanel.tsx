@@ -9,7 +9,12 @@ import { terminalBus } from "../lib/terminal-bus";
 import { useApp } from "../stores/app";
 import { IconButton } from "./ui";
 
-const THEME = { background: "#0b0d10", foreground: "#d9dde2", cursor: "#e3a857", selectionBackground: "#3b3220" };
+/** Terminal colours come from the active theme's CSS variables. */
+function termTheme() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  return { background: v("--color-bg", "#0b0d10"), foreground: v("--color-text", "#d9dde2"), cursor: v("--color-accent", "#e3a857"), selectionBackground: v("--color-accent-dim", "#3b3220") };
+}
 const USER_TERM = "user";
 
 function useXterm(opts: { disableStdin: boolean }) {
@@ -17,12 +22,15 @@ function useXterm(opts: { disableStdin: boolean }) {
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
   useEffect(() => {
-    const t = new XTerm({ convertEol: true, fontSize: 12.5, fontFamily: "ui-monospace, Cascadia Code, Consolas, monospace", theme: THEME, cursorBlink: !opts.disableStdin, disableStdin: opts.disableStdin, scrollback: 5000, allowProposedApi: true });
+    const t = new XTerm({ convertEol: true, fontSize: 12.5, fontFamily: "ui-monospace, Cascadia Code, Consolas, monospace", theme: termTheme(), cursorBlink: !opts.disableStdin, disableStdin: opts.disableStdin, scrollback: 5000, allowProposedApi: true });
     const f = new FitAddon();
     t.loadAddon(f);
     t.open(host.current!);
     term.current = t;
     fit.current = f;
+    const offTheme = useApp.subscribe((s, prev) => {
+      if (s.appearance !== prev.appearance) setTimeout(() => (t.options.theme = termTheme()), 0);
+    });
     const doFit = () => {
       try {
         f.fit();
@@ -35,6 +43,7 @@ function useXterm(opts: { disableStdin: boolean }) {
     ro.observe(host.current!);
     return () => {
       ro.disconnect();
+      offTheme();
       term.current = null;
       // xterm schedules viewport syncs right after open(); disposing synchronously (React StrictMode remounts)
       // makes those callbacks throw. Let them run first.

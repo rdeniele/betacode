@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { remember as saveMemory } from "@betacode/project";
 import { runCommand } from "@betacode/terminal";
 import { z, type PlanItem } from "@betacode/shared";
 import type { AgentTool } from "./types";
@@ -26,6 +27,26 @@ export const updatePlan: AgentTool<z.infer<typeof planSchema>> = {
     ctx.emit({ type: "plan.updated", plan });
     return { ok: true, content: `Plan updated (${plan.filter((p) => p.status === "done").length}/${plan.length} done).` };
   },
+};
+
+const rememberSchema = z.object({
+  note: z.string().min(8).max(300).describe("One short, durable fact about THIS project, for example the real test command or a convention."),
+});
+
+export const rememberTool: AgentTool<z.infer<typeof rememberSchema>> = {
+  name: "remember",
+  description:
+    "Save a durable fact about this project to .betacode/memory.md so future sessions start knowing it: the real test/lint/build commands, conventions the user cares about, gotchas you verified. Do NOT save task progress, guesses or secrets. The user must approve each note.",
+  schema: rememberSchema,
+  kind: "plan",
+  readOnly: false,
+  assess: (a) => ({ level: "confirm", summary: `Remember: ${a.note}`, grantKey: "remember" }),
+  execute: (a, ctx) =>
+    guard(async () => {
+      const r = saveMemory(ctx.workspace.root, a.note);
+      if (!r.added) return { ok: true, content: r.reason === "duplicate" ? "Already remembered." : "Nothing to save." };
+      return { ok: true, content: `Remembered. The project now has ${r.entries} saved note(s).` };
+    }),
 };
 
 const delegateSchema = z.object({ task: z.string().min(1).describe("A self-contained investigation task with all needed context.") });

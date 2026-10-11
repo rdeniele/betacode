@@ -51,6 +51,16 @@ export async function runDoctor(app: App): Promise<DoctorCheck[]> {
     const t = await app.testConnection();
     out.push(t.ok ? { name: "AI endpoint", status: "ok", detail: `${cfg.baseUrl} reachable (${t.latencyMs} ms, ${t.models.length} model(s))` } : { name: "AI endpoint", status: "fail", detail: `${cfg.baseUrl}: ${t.error}` });
     if (t.ok) {
+      const ollama = await ollamaContext(cfg.baseUrl);
+      if (ollama) {
+        out.push(
+          ollama.loaded === undefined
+            ? { name: "Ollama context", status: "warn", detail: `Ollama detected. Its default context is only 4096 tokens unless OLLAMA_CONTEXT_LENGTH is set, which silently truncates BetaCode's prompt. Set OLLAMA_CONTEXT_LENGTH=${cfg.contextLength} and restart Ollama.` }
+            : ollama.loaded >= Math.min(cfg.contextLength, 8192)
+              ? { name: "Ollama context", status: "ok", detail: `${ollama.loaded} tokens loaded` }
+              : { name: "Ollama context", status: "fail", detail: `Ollama loaded the model with only ${ollama.loaded} tokens of context, which truncates BetaCode's prompt. Set OLLAMA_CONTEXT_LENGTH=${cfg.contextLength} and restart Ollama.` },
+        );
+      }
       out.push(
         t.modelAvailable
           ? { name: "Model available", status: "ok", detail: cfg.model + (t.contextLength ? ` (server context ${t.contextLength})` : "") }
@@ -74,6 +84,27 @@ export async function runDoctor(app: App): Promise<DoctorCheck[]> {
     }
   }
   return out;
+}
+
+/** If the endpoint is an Ollama server, report the context window of the currently loaded model (undefined if none is loaded). */
+async function ollamaContext(baseUrl: string): Promise<{ loaded: number | undefined } | undefined> {
+  try {
+    const origin = new URL(baseUrl).origin;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2000);
+    try {
+      const v = await fetch(`${origin}/api/version`, { signal: ctrl.signal });
+      if (!v.ok) return undefined;
+      const ps = await fetch(`${origin}/api/ps`, { signal: ctrl.signal });
+      const j = (await ps.json().catch(() => ({}))) as { models?: Array<{ context_length?: number }> };
+      const ctx = j.models?.map((m) => m.context_length).find((n): n is number => typeof n === "number");
+      return { loaded: ctx };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return undefined;
+  }
 }
 
 export function formatDoctor(checks: DoctorCheck[]): string {

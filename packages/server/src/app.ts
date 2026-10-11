@@ -1,14 +1,14 @@
 import { existsSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { AgentSession, SUMMARY_MARKER, type RuleStore, type PermissionRule } from "@betacode/agent";
-import { createProvider, type AIProvider, type ProviderConfig } from "@betacode/ai";
-import { loadConfig, saveConfig, type BetaCodeConfig, type ConfigInput } from "@betacode/config";
+import { AgentSession, SUMMARY_MARKER, type RuleStore, type PermissionRule, type TeacherOptions } from "@betacode/agent";
+import { createProvider, isLocalUrl, type AIProvider, type ProviderConfig } from "@betacode/ai";
+import { canPersistKeys, defaultEncryptor, deleteSecret, loadConfig, loadSecret, saveConfig, saveSecret, secretId, type BetaCodeConfig, type ConfigInput, type Encryptor } from "@betacode/config";
 import { Database, type ProjectRecord, type SessionRecord } from "@betacode/database";
 import { ChangeTracker, FileService, Workspace, findFiles, searchText, renderTree, type DirEntry, type SearchMatch, type TrackedChange } from "@betacode/filesystem";
 import { Git, formatStatus, type GitStatus } from "@betacode/git";
 import { INIT_PROMPT } from "@betacode/prompts";
-import { detectProject, findInstructions, formatProject, type ProjectInfo } from "@betacode/project";
+import { detectProject, findInstructions, formatProject, readMemory, type ProjectInfo } from "@betacode/project";
 import {
   BetaCodeError,
   FileLogger,
@@ -23,6 +23,9 @@ import {
   type TokenUsage,
 } from "@betacode/shared";
 import { runCommand } from "@betacode/terminal";
+import { recommend, type HardwareInfo, type Recommendation } from "./advisor";
+import { detectHardware } from "./hardware";
+import { applyOllamaEnv, ollamaStatus, pullModel, recommendedEnv, restartOllama, type ApplyResult, type OllamaStatus } from "./ollama";
 import { PermissionBroker } from "./broker";
 import { EventBus } from "./events";
 
@@ -32,6 +35,8 @@ export interface AppOptions {
   env?: NodeJS.ProcessEnv;
   providerFactory?: (cfg: ProviderConfig) => AIProvider;
   logFile?: string | false;
+  /** Overrides the OS encryption used for remembered API keys (tests). */
+  encryptor?: Encryptor;
   /** Non-interactive approval policy (CLI --yes). */
   autoApprove?: "none" | "confirm";
 }
@@ -67,6 +72,7 @@ export interface OpenProjectResult {
   info: ProjectInfo;
   summary: string;
   instructionFiles: string[];
+  memory: string[];
   git: { isRepo: boolean; branch: string | null };
 }
 
@@ -103,7 +109,9 @@ export class App {
   project?: { record: ProjectRecord; root: string; info: ProjectInfo; fs: FileService };
   private readonly live_ = new Map<string, LiveSession>();
   private readonly terminals = new Map<string, AbortController>();
-  private apiKeyOverride?: string;
+  /** API keys typed this session, by provider host. Never reused for another host. */
+  private readonly sessionKeys = new Map<string, string>();
+  private readonly keyCache = new Map<string, string | null>();
   private detectedContext?: number;
   private readonly env: NodeJS.ProcessEnv;
 
@@ -132,29 +140,92 @@ export class App {
 
   // ---------------------------------------------------------------- config
 
+  private get encryptor(): Encryptor | undefined {
+    return this.opts.encryptor ?? defaultEncryptor();
+  }
+
+  private storedKey(id: string): string | undefined {
+    if (!this.keyCache.has(id)) this.keyCache.set(id, loadSecret(id, { home: this.home, encryptor: this.encryptor }) ?? null);
+    return this.keyCache.get(id) ?? undefined;
+  }
+
+  /** Which API key applies to an endpoint: environment/config file, then typed this session, then saved. */
+  private resolveKey(cfg: BetaCodeConfig): { key?: string; source: "env" | "session" | "saved" | "none" } {
+    return this.resolveKeyFor(cfg.baseUrl, cfg.apiKey);
+  }
+
+  private resolveKeyFor(baseUrl: string, fromEnv?: string): { key?: string; source: "env" | "session" | "saved" | "none" } {
+    if (fromEnv) return { key: fromEnv, source: "env" };
+    const id = secretId(baseUrl);
+    const session = this.sessionKeys.get(id);
+    if (session) return { key: session, source: "session" };
+    const saved = this.storedKey(id);
+    return saved ? { key: saved, source: "saved" } : { source: "none" };
+  }
+
   config(): BetaCodeConfig {
     const cfg = loadConfig({ projectRoot: this.project?.root, home: this.home, env: this.env });
-    if (this.apiKeyOverride !== undefined) cfg.apiKey = this.apiKeyOverride || undefined;
+    cfg.apiKey = this.resolveKey(cfg).key;
     if (this.detectedContext && this.detectedContext < cfg.contextLength) cfg.contextLength = this.detectedContext;
     return cfg;
   }
 
   /** Config safe to send to a UI: never includes the API key itself. */
-  publicConfig(): Omit<BetaCodeConfig, "apiKey"> & { hasApiKey: boolean; detectedContextLength?: number } {
-    const { apiKey, ...rest } = this.config();
-    return { ...rest, hasApiKey: !!apiKey, detectedContextLength: this.detectedContext };
+  publicConfig(): Omit<BetaCodeConfig, "apiKey"> & { hasApiKey: boolean; keySource: "env" | "session" | "saved" | "none"; teacherKeySource: "env" | "session" | "saved" | "none"; teacherReady: boolean; canPersistKey: boolean; detectedContextLength?: number } {
+    const base = loadConfig({ projectRoot: this.project?.root, home: this.home, env: this.env });
+    const { source } = this.resolveKey(base);
+    const { apiKey: _omit, ...rest } = this.config();
+    void _omit;
+    const t = base.teacher;
+    const teacherKeySource = t ? this.resolveKeyFor(t.baseUrl, this.env.BETA_CODE_TEACHER_API_KEY).source : "none";
+    return { ...rest, hasApiKey: source !== "none", keySource: source, teacherKeySource, teacherReady: !!this.teacherOptions(base), canPersistKey: canPersistKeys(this.encryptor), detectedContextLength: this.detectedContext };
   }
 
-  updateConfig(patch: Partial<ConfigInput>, scope: "global" | "project" = "global"): void {
-    const { apiKey, ...rest } = patch;
-    // The key lives in memory for this run (or in BETA_CODE_API_KEY); it is never written to disk.
-    if (apiKey !== undefined) this.apiKeyOverride = apiKey;
+  /**
+   * Update settings. An API key is kept in memory for this run; with `rememberKey` it is also stored encrypted for
+   * the current OS user (never in plain text). Keys are tied to the provider host they were entered for.
+   */
+  updateConfig(
+    patch: Partial<ConfigInput> & { rememberKey?: boolean; forgetKey?: boolean; teacherKey?: string; rememberTeacherKey?: boolean; forgetTeacherKey?: boolean },
+    scope: "global" | "project" = "global",
+  ): void {
+    const { apiKey, rememberKey, forgetKey, teacherKey, rememberTeacherKey, forgetTeacherKey, ...rest } = patch;
     if (Object.keys(rest).length) {
       if (scope === "project" && !this.project) throw new BetaCodeError("Open a project first.", "NO_PROJECT");
       saveConfig(rest, { scope, home: this.home, projectRoot: this.project?.root });
     }
+    const effective = loadConfig({ projectRoot: this.project?.root, home: this.home, env: this.env });
+    this.applyKey(secretId(effective.baseUrl), { key: apiKey, remember: rememberKey, forget: forgetKey });
+    if (effective.teacher) this.applyKey(secretId(effective.teacher.baseUrl), { key: teacherKey, remember: rememberTeacherKey, forget: forgetTeacherKey });
     this.detectedContext = undefined;
     this.bus.emit({ scope: "app", kind: "config.changed" });
+  }
+
+  private applyKey(id: string, a: { key?: string; remember?: boolean; forget?: boolean }): void {
+    if (a.forget) {
+      deleteSecret(id, this.home);
+      this.keyCache.delete(id);
+      this.sessionKeys.delete(id);
+    }
+    if (a.key === undefined) return;
+    const key = a.key.trim();
+    if (!key) return void this.sessionKeys.delete(id);
+    // Save first: if encryption is unavailable this throws before the key is used anywhere.
+    if (a.remember) {
+      saveSecret(id, key, { home: this.home, encryptor: this.encryptor });
+      this.keyCache.set(id, key);
+    }
+    this.sessionKeys.set(id, key);
+  }
+
+  /** The stronger helper model, if one is configured and usable (hosted endpoints need a key). */
+  teacherOptions(cfg: BetaCodeConfig = loadConfig({ projectRoot: this.project?.root, home: this.home, env: this.env })): TeacherOptions | undefined {
+    const t = cfg.teacher;
+    if (!t || t.enabled === false) return undefined;
+    const { key } = this.resolveKeyFor(t.baseUrl, this.env.BETA_CODE_TEACHER_API_KEY);
+    if (!key && !isLocalUrl(t.baseUrl)) return undefined;
+    const pc: ProviderConfig = { provider: t.provider, baseUrl: t.baseUrl, model: t.model, apiKey: key };
+    return { provider: (this.opts.providerFactory ?? createProvider)(pc), model: t.model, label: t.model, host: new URL(t.baseUrl).host };
   }
 
   makeProvider(cfg = this.config()): AIProvider {
@@ -172,6 +243,25 @@ export class App {
       return { ok: true, latencyMs: Date.now() - t0, models: models.map((m) => m.id), modelAvailable: !!match, contextLength: match?.contextLength };
     } catch (e) {
       return { ok: false, latencyMs: Date.now() - t0, models: [], modelAvailable: false, error: (e as Error).message };
+    }
+  }
+
+  /** Check that the helper model's endpoint is reachable with the configured key. */
+  async testTeacher(input?: { baseUrl?: string; provider?: string; model?: string; apiKey?: string }): Promise<ConnectionTest> {
+    const started = Date.now();
+    const saved = loadConfig({ projectRoot: this.project?.root, home: this.home, env: this.env }).teacher;
+    const baseUrl = input?.baseUrl ?? saved?.baseUrl;
+    const model = input?.model ?? saved?.model ?? "";
+    if (!baseUrl) return { ok: false, latencyMs: 0, models: [], modelAvailable: false, error: "Enter the helper endpoint first." };
+    // A key typed in the form is used for the test without being saved; otherwise the key for that host.
+    const key = input?.apiKey?.trim() || this.resolveKeyFor(baseUrl, this.env.BETA_CODE_TEACHER_API_KEY).key;
+    if (!key && !isLocalUrl(baseUrl)) return { ok: false, latencyMs: 0, models: [], modelAvailable: false, error: "A hosted helper needs an API key. Paste one above." };
+    try {
+      const provider = (this.opts.providerFactory ?? createProvider)({ provider: input?.provider ?? saved?.provider ?? "openai-compatible", baseUrl, model: model || "unset", apiKey: key });
+      const models = await withTimeout(provider.getModels(), 8000, "Timed out contacting the helper endpoint");
+      return { ok: true, latencyMs: Date.now() - started, models: models.map((m) => m.id), modelAvailable: !!model && models.some((m) => m.id === model || m.id === `models/${model}`) };
+    } catch (e) {
+      return { ok: false, latencyMs: Date.now() - started, models: [], modelAvailable: false, error: (e as Error).message };
     }
   }
 
@@ -198,6 +288,7 @@ export class App {
       info: p.info,
       summary: formatProject(p.info),
       instructionFiles: findInstructions(p.root, { home: this.home }).map((f) => f.label),
+      memory: readMemory(p.root),
       git: { isRepo, branch: isRepo ? await git.currentBranch() : null },
     };
   }
@@ -317,6 +408,7 @@ export class App {
       root: proj.path,
       config: cfg,
       provider: this.makeProvider(cfg),
+      teacher: this.teacherOptions(cfg),
       sessionId: id,
       prompter: this.broker.prompterFor(id),
       autoApprove: this.opts.autoApprove,
@@ -412,7 +504,7 @@ export class App {
     const l = await this.live(id);
     if (l.running) throw new BetaCodeError("The agent is already working on this session. Stop it first.", "BUSY");
     const cfg = this.config();
-    l.session.reconfigure(cfg, this.makeProvider(cfg));
+    l.session.reconfigure(cfg, this.makeProvider(cfg), this.teacherOptions(cfg) ?? null);
     l.running = true;
     l.ctrl = new AbortController();
     const signal = l.ctrl.signal;
@@ -421,7 +513,7 @@ export class App {
       try {
         // Respect the endpoint's real context window when it reports one.
         if (!this.detectedContext) await this.testConnection().catch(() => {});
-        l.session.reconfigure(this.config(), this.makeProvider());
+        l.session.reconfigure(this.config(), this.makeProvider(), this.teacherOptions() ?? null);
         const r = await l.session.run(text, { signal, mode });
         this.enqueue(l, () => this.db.saveSessionState(l.id, { mode, plan: l.session.agent.plan, addUsage: r.usage, model: cfg.model, provider: cfg.provider }));
       } catch (e) {
@@ -575,6 +667,48 @@ export class App {
         void mode;
         throw new BetaCodeError(`Unknown command ${cmd}. Type /help for the list.`, "UNKNOWN_COMMAND");
     }
+  }
+
+  // ---------------------------------------------------------------- setup
+
+  private pullCtrl?: AbortController;
+  private hardwareCache?: HardwareInfo;
+
+  /** Hardware, ranked model recommendations and the state of the local Ollama server. */
+  async setupOverview(): Promise<{ hardware: HardwareInfo; recommendation: Recommendation; ollama: OllamaStatus }> {
+    this.hardwareCache ??= detectHardware();
+    return { hardware: this.hardwareCache, recommendation: recommend(this.hardwareCache), ollama: await ollamaStatus() };
+  }
+
+  /** Save the recommended Ollama settings (user-level) and optionally restart Ollama so they take effect. */
+  async setupApplyEnv(opts: { contextLength: number; modelsDir?: string; restart?: boolean }): Promise<{ result: ApplyResult; ollama?: OllamaStatus }> {
+    const env = recommendedEnv(opts.contextLength, opts.modelsDir);
+    const result = applyOllamaEnv(env);
+    const ollama = opts.restart ? await restartOllama(env) : undefined;
+    return { result, ollama };
+  }
+
+  /** Start downloading a model through Ollama; progress arrives as "setup" events. */
+  setupPull(tag: string): void {
+    if (this.pullCtrl) throw new BetaCodeError("A download is already running.", "BUSY");
+    const ctrl = new AbortController();
+    this.pullCtrl = ctrl;
+    void pullModel(tag, (p) => this.bus.emit({ scope: "setup", kind: "progress", tag, status: p.status, completed: p.completed, total: p.total }), ctrl.signal)
+      .then(() => this.bus.emit({ scope: "setup", kind: "done", tag }))
+      .catch((e: Error) => this.bus.emit(e.name === "AbortError" ? { scope: "setup", kind: "cancelled", tag } : { scope: "setup", kind: "error", tag, message: e.message }))
+      .finally(() => {
+        this.pullCtrl = undefined;
+      });
+  }
+
+  setupCancelPull(): boolean {
+    this.pullCtrl?.abort();
+    return !!this.pullCtrl;
+  }
+
+  /** Point BetaCode at a local Ollama model. */
+  setupUseModel(tag: string, contextLength: number): void {
+    this.updateConfig({ provider: "qwen", baseUrl: "http://localhost:11434/v1", model: tag, contextLength });
   }
 
   // -------------------------------------------------------------- terminal

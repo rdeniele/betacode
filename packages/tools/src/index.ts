@@ -1,7 +1,7 @@
 import { runCommandTool } from "./command-tool";
 import { copyFile, createDirectory, deleteFile, editFile, listDirectory, moveFile, readFile, writeFile } from "./fs-tools";
 import { gitAdd, gitBranch, gitCheckout, gitCommit, gitDiff, gitLog, gitPull, gitPush, gitStatus } from "./git-tools";
-import { delegateTask, getDiagnostics, updatePlan } from "./meta-tools";
+import { delegateTask, getDiagnostics, rememberTool, updatePlan } from "./meta-tools";
 import { ToolRegistry } from "./registry";
 import { findFilesTool, searchCode, searchFiles } from "./search-tools";
 
@@ -18,7 +18,7 @@ export function createDefaultRegistry(): ToolRegistry {
     searchFiles, findFilesTool, searchCode,
     runCommandTool,
     gitStatus, gitDiff, gitLog, gitBranch, gitCheckout, gitAdd, gitCommit, gitPush, gitPull,
-    getDiagnostics, updatePlan, delegateTask,
+    getDiagnostics, updatePlan, rememberTool, delegateTask,
   ]) {
     r.register(t);
   }

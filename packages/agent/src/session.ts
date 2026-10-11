@@ -1,12 +1,12 @@
 import type { AIProvider } from "@betacode/ai";
 import type { BetaCodeConfig } from "@betacode/config";
-import { ChangeTracker, FileService, Workspace, type ChangeListener, type TrackedChange } from "@betacode/filesystem";
+import { ChangeTracker, FileService, Workspace, renderTree, type ChangeListener, type TrackedChange } from "@betacode/filesystem";
 import { Git, formatStatus } from "@betacode/git";
 import { createDefaultRegistry, type ToolRegistry } from "@betacode/tools";
-import { detectProject, findInstructions, formatInstructions, formatProject, type InstructionFile, type ProjectInfo } from "@betacode/project";
+import { detectProject, findInstructions, formatInstructions, formatMemory, formatProject, readMemory, type InstructionFile, type ProjectInfo } from "@betacode/project";
 import { buildSystemPrompt } from "@betacode/prompts";
 import type { AgentEvent, AgentMode, ChatMessage, Logger, PlanItem } from "@betacode/shared";
-import { Agent, type AgentSettings, type RunOptions, type RunResult } from "./agent";
+import { Agent, type AgentSettings, type RunOptions, type RunResult, type TeacherOptions } from "./agent";
 import { PermissionManager, type PermissionPrompter, type RuleStore } from "./permissions";
 
 export interface SessionOptions {
@@ -24,6 +24,7 @@ export interface SessionOptions {
   plan?: PlanItem[];
   initialChanges?: TrackedChange[];
   registry?: ToolRegistry;
+  teacher?: TeacherOptions;
   mode?: AgentMode;
   /** Home directory for user-level BETACODE.md (defaults to none). */
   home?: string;
@@ -70,7 +71,7 @@ export class AgentSession {
       },
       opts.initialChanges,
     );
-    this.files = new FileService(this.workspace, this.changes);
+    this.files = new FileService(this.workspace, this.changes, { requireReadBeforeEdit: true });
     this.permissions = new PermissionManager({
       prompter: opts.prompter,
       overrides: opts.config.permissions,
@@ -83,6 +84,7 @@ export class AgentSession {
     const c = opts.config;
     this.agent = new Agent({
       provider: opts.provider,
+      teacher: opts.teacher,
       registry: opts.registry ?? createDefaultRegistry(),
       workspace: this.workspace,
       files: this.files,
@@ -106,11 +108,26 @@ export class AgentSession {
       mode,
       cwd: this.workspace.root,
       platform: process.platform,
+      date: new Date().toISOString().slice(0, 10),
       projectSummary: formatProject(this.project),
+      projectTree: this.projectTree(),
+      memory: formatMemory(readMemory(this.workspace.root)) || undefined,
+      compact: this.config.contextLength <= 8192,
       instructions: formatInstructions(this.instructionFiles),
       gitSummary: gitText || undefined,
       extra,
     });
+  }
+
+  /** Depth-2 tree (capped) so the model starts with the layout instead of spending a step on it. */
+  private projectTree(): string {
+    try {
+      const lines = renderTree(this.files.list(".", { depth: 2, maxEntries: 120 })).split("\n");
+      const max = this.config.contextLength <= 16384 ? 50 : 100;
+      return lines.length > max ? [...lines.slice(0, max), `… (${lines.length - max} more entries; use list_directory)`].join("\n") : lines.join("\n");
+    } catch {
+      return "";
+    }
   }
 
   /** Refresh volatile context (git state, instruction files) just before a run. */
@@ -130,9 +147,9 @@ export class AgentSession {
   }
 
   /** Apply new config/provider (takes effect on the next run). */
-  reconfigure(config: BetaCodeConfig, provider: AIProvider): void {
+  reconfigure(config: BetaCodeConfig, provider: AIProvider, teacher?: TeacherOptions | null): void {
     this.config = config;
-    this.agent.configure({ provider, settings: settingsFrom(config) });
+    this.agent.configure({ provider, settings: settingsFrom(config), ...(teacher !== undefined ? { teacher } : {}) });
     this.permissions.setOverrides(config.permissions);
   }
 

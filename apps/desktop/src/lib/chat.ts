@@ -98,6 +98,8 @@ export function applyEvent(items: ChatItem[], e: AgentEvent): ChatItem[] {
       const f = toolFailed(e.content);
       return items.map((i) => (i.kind === "tool" && i.id === e.callId ? { ...i, status: f.denied ? "denied" : e.ok ? "ok" : "failed", content: e.content, durationMs: e.durationMs } : i));
     }
+    case "agent.notice":
+      return [...items, { kind: "notice", id: uid("n"), tone: e.level === "warn" ? "error" : "info", text: e.message }];
     case "model.error":
       return [...items, { kind: "notice", id: uid("n"), tone: "error", text: `Model error: ${e.message}` }];
     case "session.compacted":

@@ -7,3 +7,9 @@ target
 *.db-journal
 .DS_Store
 apps/desktop/src-tauri/gen
+cargo-check.log
+runtime/
+binaries/
+target/
+app-icon.png
+BetaCode_*.exe

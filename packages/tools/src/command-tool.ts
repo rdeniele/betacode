@@ -1,7 +1,18 @@
 import { classifyCommand, formatRunResult, runCommand } from "@betacode/terminal";
 import { z } from "@betacode/shared";
 import type { AgentTool } from "./types";
-import { guard, truncate } from "./util";
+import { fail, guard, truncate } from "./util";
+
+/** Commands that start a server or watcher and never exit on their own. */
+export function looksLongRunning(command: string): boolean {
+  const c = command.toLowerCase();
+  const runner = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(dev|start|serve|watch)\b/;
+  const frameworks = /\b(next|vite|nuxt|astro|remix)\s+dev\b/;
+  const watchers = /\b(nodemon|webpack\s+serve|ng\s+serve|live-server|cargo\s+watch)\b/;
+  const servers = /\buvicorn\b|\bflask\s+run\b|\bmanage\.py\s+runserver\b|\bhttp\.server\b|\bphp\s+artisan\s+serve\b/;
+  const watchFlag = /(^|\s)--watch(\s|$)/.test(c) && !/--run\b|--watch=false|--no-watch/.test(c);
+  return runner.test(c) || frameworks.test(c) || watchers.test(c) || servers.test(c) || watchFlag;
+}
 
 const schema = z.object({
   command: z.string().min(1).describe("Shell command line to run."),
@@ -29,6 +40,9 @@ export const runCommandTool: AgentTool<z.infer<typeof schema>> = {
   },
   execute: (a, ctx) =>
     guard(async () => {
+      if (looksLongRunning(a.command) && !a.timeoutSeconds) {
+        return fail(`"${a.command}" starts a long-running server or watcher and would never finish. Do not run dev servers in the foreground. Verify with a one-shot command instead (tests, build, typecheck, lint, or a script that exits). If you really must start it to check output, pass timeoutSeconds (for example 15).`);
+      }
       const cwd = ctx.workspace.resolve(a.cwd ?? ".");
       const r = await runCommand({
         command: a.command,

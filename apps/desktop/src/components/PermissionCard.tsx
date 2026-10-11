@@ -15,6 +15,8 @@ const VERB: Record<string, string> = {
   read_file: "read",
   git_commit: "commit",
   git_push: "push",
+  escalate_to_teacher: "ask a stronger model to take over",
+  remember: "save a note",
 };
 
 export function PermissionCard({ request, onDecide }: { request: PermissionRequest; onDecide: (id: string, d: PermissionDecision) => void }) {

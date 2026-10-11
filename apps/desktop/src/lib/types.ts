@@ -34,6 +34,7 @@ export interface OpenProject {
   info: ProjectInfo;
   summary: string;
   instructionFiles: string[];
+  memory: string[];
   git: { isRepo: boolean; branch: string | null };
 }
 
@@ -74,6 +75,12 @@ export interface PublicConfig {
   model: string;
   baseUrl: string;
   hasApiKey: boolean;
+  /** Where the key in use comes from. */
+  keySource?: "env" | "session" | "saved" | "none";
+  canPersistKey?: boolean;
+  teacher?: { enabled?: boolean; provider?: string; baseUrl: string; model: string };
+  teacherKeySource?: "env" | "session" | "saved" | "none";
+  teacherReady?: boolean;
   temperature: number;
   topP: number;
   topK: number;
@@ -117,6 +124,9 @@ export interface SearchMatch {
 export type ServerEvent =
   | { scope: "session"; sessionId: string; event: AgentEvent }
   | { scope: "terminal"; id: string; kind: "output" | "exit"; chunk?: string; code?: number | null }
+  | { scope: "setup"; kind: "progress"; tag: string; status: string; completed?: number; total?: number }
+  | { scope: "setup"; kind: "done" | "cancelled"; tag: string }
+  | { scope: "setup"; kind: "error"; tag: string; message: string }
   | { scope: "app"; kind: "project.opened" | "sessions.changed" | "config.changed" };
 
 export type SlashResult = { kind: "text"; text: string } | { kind: "run"; started: boolean } | { kind: "ui"; action: string };
@@ -125,4 +135,50 @@ export interface DoctorCheck {
   name: string;
   status: "ok" | "warn" | "fail";
   detail: string;
+}
+
+export interface GpuInfo {
+  name: string;
+  vramGB: number;
+  vendor: string;
+}
+export interface HardwareInfo {
+  os: string;
+  cpu: string;
+  cores: number;
+  ramGB: number;
+  gpus: GpuInfo[];
+  unified: boolean;
+}
+export interface CatalogModel {
+  tag: string;
+  label: string;
+  sizeGB: number;
+  thinking: boolean;
+  quality: number;
+  note: string;
+}
+export interface Fit {
+  model: CatalogModel;
+  contextLength: number;
+  memoryNeededGB: number;
+  placement: "gpu" | "split" | "cpu";
+  gpuFraction: number;
+  tokensPerSec: number;
+  level: "great" | "good" | "slow" | "too-big";
+  score: number;
+  warnings: string[];
+}
+export interface OllamaStatus {
+  installed: boolean;
+  exe?: string;
+  running: boolean;
+  version?: string;
+  models: Array<{ name: string; sizeGB: number }>;
+  loadedContext?: number;
+}
+export interface SetupOverview {
+  hardware: HardwareInfo;
+  recommendation: { best?: Fit; options: Fit[] };
+  ollama: OllamaStatus;
 }

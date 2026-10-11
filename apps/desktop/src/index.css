@@ -13,6 +13,7 @@
   --color-faint: #596069;
   --color-accent: #e3a857;
   --color-accent-dim: #3a2d18;
+  --color-on-accent: #0b0d10;
   --color-ok: #6fcf97;
   --color-bad: #f2706b;
   --color-warn: #e6c15a;
@@ -76,4 +77,59 @@ select:focus-visible,
   .bc-pulse {
     animation: none;
   }
+}
+
+/* ---- Themes (set on <html data-theme>) ---- */
+:root[data-theme="slate"] {
+  --color-bg: #282c34;
+  --color-panel: #1d2026;
+  --color-raised: #2e333c;
+  --color-hover: #353b45;
+  --color-line: #3b424d;
+  --color-text: #c3c9d4;
+  --color-muted: #8b93a1;
+  --color-faint: #636b78;
+  --color-accent: #e06c75;
+  --color-accent-dim: #3d2a2f;
+  --color-on-accent: #1d2026;
+  --color-ok: #98c379;
+  --color-bad: #e06c75;
+  --color-warn: #e5c07b;
+  --color-info: #61afef;
+}
+
+:root[data-theme="paper"] {
+  --color-bg: #f6f5f2;
+  --color-panel: #ffffff;
+  --color-raised: #efede8;
+  --color-hover: #e7e4de;
+  --color-line: #d9d5cc;
+  --color-text: #24231f;
+  --color-muted: #66625a;
+  --color-faint: #98938a;
+  --color-accent: #b4531c;
+  --color-accent-dim: #f4e3d6;
+  --color-on-accent: #ffffff;
+  --color-ok: #2f7d4f;
+  --color-bad: #c0392b;
+  --color-warn: #9a6a12;
+  --color-info: #2b6cb0;
+}
+:root[data-theme="paper"] * {
+  scrollbar-color: #c9c4b9 transparent;
+}
+:root[data-theme="paper"] ::selection {
+  background: #f1d9c4;
+}
+
+/* ---- Interface font and density ---- */
+:root[data-font="mono"] body {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+:root[data-density="compact"] body {
+  font-size: 12px;
+}
+:root[data-density="spacious"] body {
+  font-size: 14px;
 }

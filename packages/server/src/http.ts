@@ -109,6 +109,12 @@ export function buildRoutes(app: App): Route[] {
           model: z.string().min(1).optional(),
           baseUrl: z.string().url().optional(),
           apiKey: z.string().optional(),
+          teacher: z.object({ enabled: z.boolean().optional(), provider: z.string().min(1).optional(), baseUrl: z.string().url(), model: z.string().min(1) }).optional(),
+          teacherKey: z.string().optional(),
+          rememberTeacherKey: z.boolean().optional(),
+          forgetTeacherKey: z.boolean().optional(),
+          rememberKey: z.boolean().optional(),
+          forgetKey: z.boolean().optional(),
           temperature: z.number().optional(),
           topP: z.number().optional(),
           topK: z.number().optional(),
@@ -125,6 +131,20 @@ export function buildRoutes(app: App): Route[] {
       return app.publicConfig();
     }),
     route("POST", "/api/config/test", () => app.testConnection()),
+    route("POST", "/api/config/test-teacher", ({ body }) =>
+      app.testTeacher(parse(z.object({ baseUrl: z.string().url().optional(), provider: z.string().optional(), model: z.string().optional(), apiKey: z.string().optional() }), body)),
+    ),
+    route("GET", "/api/setup/overview", () => app.setupOverview()),
+    route("POST", "/api/setup/apply-env", ({ body }) =>
+      app.setupApplyEnv(parse(z.object({ contextLength: z.number().int().min(2048).max(262144), modelsDir: z.string().min(2).optional(), restart: z.boolean().optional() }), body)),
+    ),
+    route("POST", "/api/setup/pull", ({ body }) => (app.setupPull(parse(z.object({ tag: z.string().min(1).max(100) }), body).tag), { started: true })),
+    route("POST", "/api/setup/pull/cancel", () => ({ cancelled: app.setupCancelPull() })),
+    route("POST", "/api/setup/use", ({ body }) => {
+      const b = parse(z.object({ tag: z.string().min(1), contextLength: z.number().int().min(2048) }), body);
+      app.setupUseModel(b.tag, b.contextLength);
+      return app.publicConfig();
+    }),
     route("GET", "/api/doctor", async () => ({ checks: await runDoctor(app) })),
 
     route("POST", "/api/terminal/:id/run", async ({ params, body }) => (await app.runTerminal(params.id!, parse(z.object({ command: z.string().min(1) }), body).command), { ok: true })),

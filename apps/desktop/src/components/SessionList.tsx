@@ -12,7 +12,7 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-export function SessionList() {
+export function SessionList({ compact = false }: { compact?: boolean }) {
   const { sessions, activeId, running } = useApp();
   const { newSession, selectSession, deleteSession, renameSession, duplicateSession, refreshSessions } = useApp.getState();
   const [query, setQuery] = useState("");
@@ -26,6 +26,7 @@ export function SessionList() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {!compact && (
       <div className="flex items-center gap-1.5 p-2">
         <div className="relative flex-1">
           <Search size={12} className="absolute left-2 top-2 text-faint" />
@@ -35,6 +36,7 @@ export function SessionList() {
           <Plus size={15} />
         </IconButton>
       </div>
+      )}
       <ul className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2" aria-label="Sessions">
         {sessions.map((s) => (
           <li key={s.id} className={clsx("group flex items-center gap-1.5 rounded-md px-2 py-1.5", s.id === activeId ? "bg-hover" : "hover:bg-hover/60")}>

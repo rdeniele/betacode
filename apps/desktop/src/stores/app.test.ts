@@ -44,7 +44,7 @@ vi.mock("../lib/api", () => {
 import { api } from "../lib/api";
 import { useApp } from "./app";
 
-const session = (event: ServerEvent extends infer E ? (E extends { scope: "session" } ? E["event"] : never) : never): ServerEvent => ({ scope: "session", sessionId: "s1", event });
+const session = (event: Extract<ServerEvent, { scope: "session" }>["event"]): ServerEvent => ({ scope: "session", sessionId: "s1", event });
 
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -68,7 +68,7 @@ describe("app store", () => {
   });
 
   it("tracks agent state, streaming text, tool lifecycle and completion from live events", () => {
-    const push = (e: Parameters<typeof session>[0]) => emit.current!(session(e));
+    const push = (e: Extract<ServerEvent, { scope: "session" }>["event"]) => emit.current!(session(e));
     push({ type: "agent.started", sessionId: "s1", mode: "code" });
     expect(useApp.getState()).toMatchObject({ running: true, agentState: "THINKING" });
     push({ type: "agent.state", state: "READING", detail: "Read a.ts" });
