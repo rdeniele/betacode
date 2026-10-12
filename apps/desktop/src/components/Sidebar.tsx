@@ -39,7 +39,7 @@ export function Sidebar() {
   const newSession = useApp((s) => s.newSession);
   const [groups, setGroups] = useState({ sessions: true, files: true });
   const toggleGroup = (g: keyof typeof groups) => setGroups((x) => ({ ...x, [g]: !x[g] }));
-  const goRight = (tab: RightTab) => set({ rightTab: tab });
+  const goRight = (tab: RightTab) => set({ rightTab: tab, rightPanelOpen: true });
   const dot = modelStatus === "connected" ? (running ? "bc-pulse bg-accent" : "bg-ok") : modelStatus === "unreachable" ? "bg-bad" : "bg-faint";
   const statusText = modelStatus === "connected" ? (running ? "working" : "ready") : modelStatus === "unreachable" ? "offline" : "…";
 

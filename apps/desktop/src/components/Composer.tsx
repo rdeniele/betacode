@@ -187,7 +187,7 @@ export function Composer({
   };
 
   return (
-    <div className={clsx(hero ? "w-full" : "border-t border-line bg-panel p-3")}>
+    <div className={clsx("bc-composer min-w-0", hero ? "w-full" : "border-t border-line bg-panel p-3")}>
       <div className={clsx("relative mx-auto", hero ? "max-w-2xl" : "max-w-3xl")}>
         {suggestions.length > 0 && (
           <ul role="listbox" aria-label="Commands" className="absolute bottom-full left-0 right-0 z-20 mb-1.5 overflow-hidden rounded-lg border border-line bg-raised shadow-xl">
@@ -238,17 +238,17 @@ export function Composer({
               if (e.key === "Escape" && running) onStop();
             }}
           />
-          <div className="flex items-center gap-1.5 px-2.5 pb-2.5 pt-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5 pt-1.5">
             <button aria-label="Toggle terminal" aria-pressed={terminalOpen} title="Terminal" onClick={() => set({ terminalOpen: !terminalOpen })} className={clsx("rounded-lg border border-line p-1.5 hover:bg-hover", terminalOpen ? "text-accent" : "text-muted")}>
               <SquareTerminal size={14} />
             </button>
             <button aria-label="Search files" title="Search in files (Ctrl+Shift+P)" onClick={() => set({ dialog: "search" })} className="rounded-lg border border-line p-1.5 text-muted hover:bg-hover">
               <Search size={14} />
             </button>
-            <span className="ml-1 hidden whitespace-nowrap text-[11px] text-faint min-[1500px]:inline">
+            <span className="bc-composer-hint ml-1 whitespace-nowrap text-[11px] text-faint">
               <Kbd>Enter</Kbd> send · <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> newline
             </span>
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
               <ModelPicker />
               <ModeSwitch mode={mode} onMode={onMode} />
               {running ? (

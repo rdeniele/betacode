@@ -80,6 +80,32 @@ select:focus-visible,
 }
 
 /* ---- Themes (set on <html data-theme>) ---- */
+.bc-details {
+  width: min(380px, 38vw);
+  animation: bc-details-enter 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes bc-details-enter {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@media (max-width: 1100px) {
+  .bc-details {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    width: min(380px, 85%);
+    box-shadow: -12px 0 28px rgb(0 0 0 / 18%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-details { animation: none; }
+}
+.bc-composer { container-type: inline-size; }
+.bc-composer-hint { display: none; }
+@container (min-width: 720px) {
+  .bc-composer-hint { display: inline; }
+}
+
 :root[data-theme="slate"] {
   --color-bg: #282c34;
   --color-panel: #1d2026;

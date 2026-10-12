@@ -1,4 +1,5 @@
 import type { AIProvider, ChatResponse } from "@betacode/ai";
+import { ProviderError } from "@betacode/ai";
 import type { ChangeTracker, FileService, Workspace } from "@betacode/filesystem";
 import { Git } from "@betacode/git";
 import type { ProjectInfo } from "@betacode/project";
@@ -16,7 +17,7 @@ import {
   type TokenUsage,
   type ToolCallRequest,
 } from "@betacode/shared";
-import { FAILED_CHECK_REMINDER, STALLED_REMINDER, SUBAGENT_PROMPT, verificationReminder } from "@betacode/prompts";
+import { FAILED_CHECK_REMINDER, QUALITY_REVIEW_REMINDER, STALLED_REMINDER, SUBAGENT_PROMPT, verificationReminder } from "@betacode/prompts";
 import { looksLikeTestCommand } from "@betacode/terminal";
 import type { AgentTool, ToolContext, ToolRegistry, ToolResult } from "@betacode/tools";
 import { claimCorrection, commandForTool, unverifiedCommandClaims } from "./claims";
@@ -203,6 +204,9 @@ export class Agent {
     let toolsDisabled = false;
     let limitNoticeSent = false;
     let editedSinceCheck = false;
+    const uiTask = /\b(landing\s*page|website|web\s*page|frontend|front-end|ui|ux|dashboard|layout|responsive|redesign)\b/i.test(input);
+    let needsQualityReview = false;
+    let qualityReviews = 0;
     let verifyNudged = false;
     let failedCheckNudged = false;
     let latestCheckFailed = false;
@@ -316,6 +320,13 @@ export class Agent {
             continue;
           }
         }
+        if (uiTask && needsQualityReview && qualityReviews < 2 && !toolsDisabled && (mode === "code" || mode === "debug")) {
+          qualityReviews++;
+          needsQualityReview = false;
+          this.emit({ type: "agent.notice", level: "info", message: "Reviewing the implementation and refining any concrete issues before finishing." });
+          this.push({ role: "user", content: QUALITY_REVIEW_REMINDER });
+          continue;
+        }
         return finish("completed");
       }
 
@@ -365,7 +376,12 @@ export class Agent {
           const ran = commandForTool(call.name, parsedArgs);
           if (ran) executedCommands.push(ran);
         }
-        if (outcome.edited) editedSinceCheck = true;
+        if (outcome.edited) {
+          editedSinceCheck = true;
+          needsQualityReview = true;
+          // A quality-review fix needs a fresh check too.
+          if (qualityReviews > 0) verifyNudged = false;
+        }
         if (outcome.isCheck) {
           latestCheckFailed = !outcome.ok;
           editedSinceCheck = false;
@@ -410,6 +426,19 @@ export class Agent {
   }
 
   private async callModel(messages: ChatMessage[], tools: ReturnType<ToolRegistry["specs"]> | undefined, signal: AbortSignal): Promise<ChatResponse> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.callModelOnce(messages, tools, signal);
+      } catch (error) {
+        if (signal.aborted || isAbortError(error) || !(error instanceof ProviderError) || !error.retryable || attempt >= 2) throw error;
+        // Tools execute only after a complete response. Discarding this partial
+        // model turn preserves completed work and cannot repeat an edit.
+        this.emit({ type: "agent.notice", level: "warn", message: `Model connection interrupted. Retrying the current response (${attempt + 1}/2); completed edits are saved.` });
+      }
+    }
+  }
+
+  private async callModelOnce(messages: ChatMessage[], tools: ReturnType<ToolRegistry["specs"]> | undefined, signal: AbortSignal): Promise<ChatResponse> {
     const s = this.opts.settings;
     const t0 = Date.now();
     let final: ChatResponse | undefined;

@@ -14,6 +14,7 @@ export function useShortcuts(): void {
       if (mod && e.shiftKey && k === "p") return (e.preventDefault(), s.set({ dialog: "search" }));
       if (mod && k === "p") return (e.preventDefault(), s.set({ dialog: "quick-open" }));
       if (mod && k === "`") return (e.preventDefault(), s.set({ terminalOpen: !s.terminalOpen }));
+      if (mod && e.shiftKey && k === "b") return (e.preventDefault(), s.set({ rightPanelOpen: !s.rightPanelOpen }));
       if (e.key === "Escape" && s.running && !s.dialog) return void s.cancel();
       if (mod && k === "z" && !inEditable(e.target)) {
         e.preventDefault();

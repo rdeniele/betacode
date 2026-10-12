@@ -62,6 +62,7 @@ interface State {
   mode: AgentMode;
   leftTab: LeftTab;
   rightTab: RightTab;
+  rightPanelOpen: boolean;
   terminalOpen: boolean;
   dialog: Dialog;
   settingsTab: SettingsTab;
@@ -97,7 +98,7 @@ interface State {
   acceptAll(): Promise<void>;
   undo(): Promise<void>;
   redo(): Promise<void>;
-  openFile(path: string): Promise<void>;
+  openFile(path: string, reveal?: boolean): Promise<void>;
   closeTab(path: string): void;
   editTab(path: string, content: string): void;
   saveTab(path: string): Promise<void>;
@@ -151,7 +152,7 @@ export const useApp = create<State>((set, get) => {
     if (e.type === "file.changed") {
       // Keep open editor tabs in sync with what the agent wrote (unless the user has unsaved edits).
       const tab = get().tabs.find((t) => t.path === e.change.path);
-      if (tab && tab.content === tab.saved) void get().openFile(e.change.path);
+      if (tab && tab.content === tab.saved) void get().openFile(e.change.path, false);
       set((s) => ({ treeVersion: s.treeVersion + 1 }));
     }
     if (e.type === "agent.completed") void get().refreshGit();
@@ -184,6 +185,7 @@ export const useApp = create<State>((set, get) => {
     mode: "code",
     leftTab: "files",
     rightTab: "changes",
+    rightPanelOpen: false,
     terminalOpen: false,
     dialog: null,
     settingsTab: "models",
@@ -384,7 +386,7 @@ export const useApp = create<State>((set, get) => {
         const c = await api.revertChange(id, changeId);
         set((s) => ({ changes: s.changes.map((x) => (x.id === c.id ? c : x)), treeVersion: s.treeVersion + 1 }));
         const tab = get().tabs.find((t) => t.path === c.path);
-        if (tab) void get().openFile(c.path);
+        if (tab) void get().openFile(c.path, false);
         void get().refreshGit();
       } catch (e) {
         get().toast(errMsg(e), "error");
@@ -414,13 +416,13 @@ export const useApp = create<State>((set, get) => {
       void get().refreshGit();
     },
 
-    async openFile(path) {
+    async openFile(path, reveal = true) {
       try {
         const f = await api.readFile(path);
         set((s) => {
           const tab: EditorTab = { path: f.path, language: f.language, content: f.content, saved: f.content };
           const exists = s.tabs.some((t) => t.path === f.path);
-          return { tabs: exists ? s.tabs.map((t) => (t.path === f.path ? tab : t)) : [...s.tabs, tab], activeTab: f.path, rightTab: "editor" };
+          return { tabs: exists ? s.tabs.map((t) => (t.path === f.path ? tab : t)) : [...s.tabs, tab], ...(reveal ? { activeTab: f.path, rightTab: "editor" as const, rightPanelOpen: true } : {}) };
         });
       } catch (e) {
         get().toast(errMsg(e), "error");

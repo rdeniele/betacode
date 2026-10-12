@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProviderError } from "@betacode/ai";
 import { allow, call, deny, harness, nodeCmd, say, use, type Harness } from "./helpers";
 
 let h: Harness | undefined;
@@ -10,6 +11,42 @@ const types = (hh: Harness) => hh.events.map((e) => e.type);
 const toolMessages = (hh: Harness) => hh.session.agent.history.filter((m) => m.role === "tool");
 
 describe("agent loop: tool selection and execution", () => {
+  it("recovers a dropped model response without repeating completed edits", async () => {
+    h = harness([
+      use(call("write_file", { path: "index.html", content: "<h1>Hello</h1>" })),
+      () => { throw new ProviderError("connection interrupted", undefined, true); },
+      say("Created the page."),
+      say("Reviewed the page source; visual appearance needs a browser preview."),
+    ], { prompter: allow });
+    const result = await h.session.run("make a simple landing page");
+    expect(result.reason).toBe("completed");
+    expect(h.events.filter(e => e.type === "tool.completed")).toHaveLength(1);
+    expect(h.events.some(e => e.type === "agent.notice" && e.message.includes("Retrying"))).toBe(true);
+    expect(readFileSync(join(h.dir, "index.html"), "utf8")).toBe("<h1>Hello</h1>");
+  });
+
+  it("bounds recovery when the model remains disconnected", async () => {
+    const fail = () => { throw new ProviderError("connection interrupted", undefined, true); };
+    h = harness([fail, fail, fail]);
+    expect((await h.session.run("hello")).reason).toBe("error");
+    expect(h.provider.requests).toHaveLength(3);
+  });
+
+  it("reviews UI work, allows a refinement, and reviews the revision", async () => {
+    h = harness([
+      use(call("write_file", { path: "index.html", content: "<h1>Hello</h1>" })),
+      say("Done."),
+      use(call("read_file", { path: "index.html" })),
+      use(call("edit_file", { path: "index.html", oldText: "<h1>Hello</h1>", newText: '<main><h1>Hello</h1></main>' })),
+      say("Added a main landmark."),
+      say("Reviewed the revised source. Rendered appearance was not verified."),
+    ], { prompter: allow });
+    const result = await h.session.run("create a landing page");
+    expect(result.reason).toBe("completed");
+    expect(h.events.filter(e => e.type === "agent.notice" && e.message.includes("Reviewing"))).toHaveLength(2);
+    expect(readFileSync(join(h.dir, "index.html"), "utf8")).toContain("<main>");
+    expect(result.finalText).toContain("Rendered appearance was not verified");
+  });
   it("inspects, edits and finishes across multiple iterations", async () => {
     h = harness(
       [

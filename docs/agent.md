@@ -24,6 +24,10 @@ while steps < maxIterations:
 
 ## Error recovery
 
+UI requests that modify files receive a quality-review turn before completion. The agent is instructed to inspect its work, fix material shortcomings and recheck after edits. A refinement can trigger one further review, capped at two reviews per user turn within the existing iteration limit. All coding prompts also require self-review. Without a browser/preview tool, this is source-based review and cannot certify rendered appearance.
+
+Inference requests allow a 30-minute gap while waiting for headers or response bytes, so slow local generation is not cut off by Node's default five-minute timeout. User cancellation remains immediate. A stream that closes without a completion marker or finish reason is rejected before its tool calls can execute. Recoverable connection failures retry the current model turn at most twice, keeping completed tool results and edits; persistent failures still stop with an error.
+
 Failures are returned to the model verbatim (exit code, stdout, stderr; "oldText not found" for edits; schema errors for bad arguments). After `maxRetries` consecutive failing test/build/lint runs the agent loses its tools for one turn and must write a final report instead of retrying forever.
 
 ## Modes

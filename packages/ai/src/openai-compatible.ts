@@ -10,6 +10,11 @@ import {
   type StreamEvent,
 } from "./provider";
 import { readSse } from "./sse";
+import { Agent } from "undici";
+
+// Local models can spend several minutes preparing a large tool call without
+// emitting bytes. Node's default five-minute idle timeout interrupts that work.
+const inferenceDispatcher = new Agent({ headersTimeout: 30 * 60_000, bodyTimeout: 30 * 60_000 });
 
 export interface OpenAICompatibleOptions {
   baseUrl: string;
@@ -108,6 +113,7 @@ export class OpenAICompatibleProvider implements AIProvider {
           headers: this.headers(),
           body: JSON.stringify(body),
           signal,
+          ...(!this.opts.fetch ? { dispatcher: inferenceDispatcher } : {}),
         });
         if (res.ok) return res;
         const text = await res.text().catch(() => "");
@@ -156,38 +162,48 @@ export class OpenAICompatibleProvider implements AIProvider {
     let content = "";
     let finish: string | null = null;
     let usage: TokenUsage | undefined;
+    let completed = false;
 
-    for await (const data of readSse(res.body, request.signal)) {
-      if (data.trim() === "[DONE]") break;
-      let chunk: any;
-      try {
-        chunk = JSON.parse(data);
-      } catch {
-        throw new ProviderError(`Malformed stream chunk from model endpoint: ${data.slice(0, 120)}`);
+    try {
+      for await (const data of readSse(res.body, request.signal)) {
+        if (data.trim() === "[DONE]") { completed = true; break; }
+        let chunk: any;
+        try {
+          chunk = JSON.parse(data);
+        } catch {
+          throw new ProviderError(`Malformed stream chunk from model endpoint: ${data.slice(0, 120)}`);
+        }
+        if (chunk.error) throw new ProviderError(`Model endpoint error: ${chunk.error.message ?? JSON.stringify(chunk.error)}`);
+        if (chunk.usage) {
+          usage = mapUsage(chunk.usage);
+          if (usage) yield { type: "usage", usage };
+        }
+        const choice = chunk.choices?.[0];
+        if (!choice) continue;
+        const delta = choice.delta ?? {};
+        if (typeof delta.content === "string" && delta.content) {
+          content += delta.content;
+          yield { type: "text", delta: delta.content };
+        }
+        for (const tc of delta.tool_calls ?? []) {
+          const index: number = tc.index ?? 0;
+          const cur = pending.get(index) ?? { name: "", args: "" };
+          if (tc.id) cur.id = tc.id;
+          if (tc.function?.name) cur.name += tc.function.name;
+          const argDelta = typeof tc.function?.arguments === "string" ? tc.function.arguments : tc.function?.arguments !== undefined ? JSON.stringify(tc.function.arguments) : "";
+          cur.args += argDelta;
+          pending.set(index, cur);
+          yield { type: "tool_call_delta", index, id: tc.id, name: tc.function?.name, argumentsDelta: argDelta || undefined };
+        }
+        if (choice.finish_reason) finish = choice.finish_reason;
       }
-      if (chunk.error) throw new ProviderError(`Model endpoint error: ${chunk.error.message ?? JSON.stringify(chunk.error)}`);
-      if (chunk.usage) {
-        usage = mapUsage(chunk.usage);
-        if (usage) yield { type: "usage", usage };
-      }
-      const choice = chunk.choices?.[0];
-      if (!choice) continue;
-      const delta = choice.delta ?? {};
-      if (typeof delta.content === "string" && delta.content) {
-        content += delta.content;
-        yield { type: "text", delta: delta.content };
-      }
-      for (const tc of delta.tool_calls ?? []) {
-        const index: number = tc.index ?? 0;
-        const cur = pending.get(index) ?? { name: "", args: "" };
-        if (tc.id) cur.id = tc.id;
-        if (tc.function?.name) cur.name += tc.function.name;
-        const argDelta = typeof tc.function?.arguments === "string" ? tc.function.arguments : tc.function?.arguments !== undefined ? JSON.stringify(tc.function.arguments) : "";
-        cur.args += argDelta;
-        pending.set(index, cur);
-        yield { type: "tool_call_delta", index, id: tc.id, name: tc.function?.name, argumentsDelta: argDelta || undefined };
-      }
-      if (choice.finish_reason) finish = choice.finish_reason;
+    } catch (error) {
+      if (request.signal?.aborted || isAbortError(error) || error instanceof ProviderError) throw error;
+      throw new ProviderError("The model connection was interrupted before its response finished. Completed edits are saved; retry the task to continue.", undefined, true);
+    }
+    if (request.signal?.aborted) throw Object.assign(new Error("Aborted"), { name: "AbortError" });
+    if (!completed && !finish) {
+      throw new ProviderError("The model connection closed before its response finished. Completed edits are saved; retry the task to continue.", undefined, true);
     }
 
     const toolCalls: ToolCallRequest[] = [...pending.entries()]

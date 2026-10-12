@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,13 +54,38 @@ import { SettingsDialog } from "./SettingsDialog";
 import { ToolCard } from "./ToolCard";
 import { Hero } from "./Hero";
 import { Sidebar } from "./Sidebar";
+import { RightPanel } from "./RightPanel";
 import { SetupAdvisor } from "./SetupAdvisor";
 import { applyAppearance, DEFAULT_APPEARANCE, loadAppearance, saveAppearance } from "../lib/appearance";
 import { formatTokens } from "./ui";
 
 beforeEach(() => {
+  useApp.setState({ rightPanelOpen: false, rightTab: "changes" });
   vi.clearAllMocks();
   useApp.setState({ changes: [], sessions: [], activeId: "s1", running: false, dialog: "settings", settingsTab: "models", toasts: [], config: { provider: "qwen", model: "Qwen/Qwen3-Coder-30B-A3B-Instruct", baseUrl: "http://localhost:8000/v1", hasApiKey: false, temperature: 0.7, topP: 0.8, topK: 20, repetitionPenalty: 1.05, contextLength: 32768, maxIterations: 30, maxRetries: 5, autoCompact: true, permissions: {} } });
+});
+
+describe("details panel", () => {
+  it("gives chat the space by default and closes on request", async () => {
+    const user = userEvent.setup();
+    const view = render(<RightPanel />);
+    expect(screen.queryByRole("complementary", { name: "Details" })).not.toBeInTheDocument();
+    act(() => useApp.setState({ rightPanelOpen: true }));
+    view.rerender(<RightPanel />);
+    expect(screen.getByRole("complementary", { name: "Details" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close details panel" }));
+    expect(screen.queryByRole("complementary", { name: "Details" })).not.toBeInTheDocument();
+  });
+
+  it("opens details from the sidebar and keeps tab switching available", async () => {
+    const user = userEvent.setup();
+    useApp.setState({ sidebarOpen: true });
+    render(<><Sidebar /><RightPanel /></>);
+    await user.click(screen.getByRole("button", { name: "Changes" }));
+    expect(useApp.getState().rightPanelOpen).toBe(true);
+    await user.click(screen.getByRole("tab", { name: "Context" }));
+    expect(useApp.getState().rightTab).toBe("context");
+  });
 });
 
 describe("PermissionCard", () => {

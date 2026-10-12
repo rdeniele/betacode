@@ -5,6 +5,7 @@ export async function* readSse(body: ReadableStream<Uint8Array>, signal?: AbortS
   let buffer = "";
   const onAbort = () => void reader.cancel().catch(() => {});
   signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -24,6 +25,7 @@ export async function* readSse(body: ReadableStream<Uint8Array>, signal?: AbortS
     if (tail !== null) yield tail;
   } finally {
     signal?.removeEventListener("abort", onAbort);
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }

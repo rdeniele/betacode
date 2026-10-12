@@ -27,6 +27,24 @@ function sse(res: import("node:http").ServerResponse, chunks: unknown[], opts: {
 }
 
 describe("OpenAICompatibleProvider streaming", () => {
+  it("rejects a truncated tool call instead of executing a partial response", async () => {
+    const baseUrl = await start((_b, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "write_file", arguments: '{"path":"index.html"' } }] } }] })}\n\n`);
+    });
+    const p = new OpenAICompatibleProvider({ baseUrl, model: "m" });
+    await expect(collectStream(p.stream({ messages: [] }))).rejects.toMatchObject({ retryable: true, message: expect.stringContaining("before its response finished") });
+  });
+
+  it("reports dropped connections as recoverable failures", async () => {
+    const baseUrl = await start((_b, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n');
+      setTimeout(() => res.destroy(), 20);
+    });
+    const p = new OpenAICompatibleProvider({ baseUrl, model: "m" });
+    await expect(collectStream(p.stream({ messages: [] }))).rejects.toMatchObject({ retryable: true, message: expect.stringContaining("interrupted") });
+  });
   it("streams text deltas and usage", async () => {
     const baseUrl = await start((_b, res) =>
       sse(res, [

@@ -47,6 +47,7 @@ import { useApp } from "./app";
 const session = (event: Extract<ServerEvent, { scope: "session" }>["event"]): ServerEvent => ({ scope: "session", sessionId: "s1", event });
 
 beforeEach(async () => {
+  useApp.setState({ rightPanelOpen: false, rightTab: "changes" });
   vi.clearAllMocks();
   useApp.setState({ project: undefined, activeId: undefined, items: [], plan: [], changes: [], pending: [], running: false, agentState: "IDLE", tabs: [], toasts: [], sessions: [] });
   useApp.getState().init();
@@ -119,7 +120,7 @@ describe("app store", () => {
 
   it("opens, edits and saves files in editor tabs and tracks unsaved changes", async () => {
     await useApp.getState().openFile("src/a.ts");
-    expect(useApp.getState()).toMatchObject({ activeTab: "src/a.ts", rightTab: "editor" });
+    expect(useApp.getState()).toMatchObject({ activeTab: "src/a.ts", rightTab: "editor", rightPanelOpen: true });
     useApp.getState().editTab("src/a.ts", "const a = 2;");
     expect(useApp.getState().tabs[0]).toMatchObject({ content: "const a = 2;", saved: "const a = 1;" });
     await useApp.getState().saveTab("src/a.ts");
@@ -134,5 +135,14 @@ describe("app store", () => {
     vi.mocked(api.readFile).mockClear();
     emit.current!(session({ type: "file.changed", change: { id: "c", path: "src/a.ts", kind: "modified", status: "pending", turn: 1, additions: 1, deletions: 1, diff: "" } }));
     expect(api.readFile).toHaveBeenCalledWith("src/a.ts");
+  });
+
+  it("refreshes agent edits without reopening details or switching the selected tab", async () => {
+    await useApp.getState().openFile("src/a.ts");
+    useApp.setState({ rightPanelOpen: false, rightTab: "changes" });
+    vi.mocked(api.readFile).mockResolvedValueOnce({ path: "src/a.ts", content: "const a = 3;", size: 12, language: "typescript" });
+    emit.current!(session({ type: "file.changed", change: { id: "c", path: "src/a.ts", kind: "modified", status: "pending", turn: 1, additions: 1, deletions: 1, diff: "" } }));
+    await vi.waitFor(() => expect(useApp.getState().tabs[0]?.content).toBe("const a = 3;"));
+    expect(useApp.getState()).toMatchObject({ rightPanelOpen: false, rightTab: "changes" });
   });
 });
